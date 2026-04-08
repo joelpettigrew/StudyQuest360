@@ -1,0 +1,137 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores student and parent profile information and game stats.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "parent", "admin"] },
+        "parentId": { "type": "string", "description": "DEPRECATED: Use connections collection instead." },
+        "xp": { "type": "integer", "description": "Total experience points earned." },
+        "level": { "type": "integer" },
+        "streak": { "type": "integer" },
+        "tries": { "type": "integer", "description": "Current available game attempts." },
+        "lastCompletedDate": { "type": "string", "format": "date-time" },
+        "assignmentsAddedCount": { "type": "integer" },
+        "onboarded": { "type": "boolean", "description": "Whether the student has seen the welcome onboarding." }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Connection": {
+      "title": "Connection",
+      "description": "Links a student to a parent for many-to-many relationship.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "parentId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "parentId"]
+    },
+    "Assignment": {
+      "title": "Assignment",
+      "description": "Represents a school task for a student.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "parentId": { "type": "string" },
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "topic": { "type": "string" },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["not-started", "in-progress", "completed"] },
+        "xp": { "type": "integer" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "title", "status"]
+    },
+    "Scroll": {
+      "title": "Scroll",
+      "description": "AI-generated educational scroll.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "assignmentId": { "type": "string" },
+        "topic": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "topic", "imageUrl"]
+    },
+    "ParentSettings": {
+      "title": "Parent Settings",
+      "description": "Configuration for student access and restrictions.",
+      "type": "object",
+      "properties": {
+        "parentId": { "type": "string" },
+        "schoolHoursStart": { "type": "string", "description": "HH:MM format" },
+        "schoolHoursEnd": { "type": "string", "description": "HH:MM format" },
+        "blockedTopics": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["parentId"]
+    },
+    "GameSession": {
+      "title": "Game Session",
+      "description": "Records a single game played by a student.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "gameId": { "type": "string" },
+        "score": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "gameId", "score"]
+    },
+    "StudyHistory": {
+      "title": "Study History",
+      "description": "Records AI-generated study assists.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "topic": { "type": "string" },
+        "summary": { "type": "string" },
+        "keyConcepts": { "type": "array", "items": { "type": "string" } },
+        "interestingFacts": { "type": "array", "items": { "type": "string" } },
+        "resources": { "type": "array", "items": { "type": "object" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "topic", "summary"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents."
+    },
+    "/assignments/{assignmentId}": {
+      "schema": "Assignment",
+      "description": "Student assignments."
+    },
+    "/scrolls/{scrollId}": {
+      "schema": "Scroll",
+      "description": "AI-generated scrolls."
+    },
+    "/settings/{parentId}": {
+      "schema": "ParentSettings",
+      "description": "Parental control settings."
+    },
+    "/game_sessions/{sessionId}": {
+      "schema": "GameSession",
+      "description": "Game history records."
+    },
+    "/study_history/{historyId}": {
+      "schema": "StudyHistory",
+      "description": "Study assist history records."
+    },
+    "/connections/{connectionId}": {
+      "schema": "Connection",
+      "description": "Links between students and parents."
+    }
+  }
+}

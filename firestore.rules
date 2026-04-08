@@ -1,0 +1,283 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: userId (UID)
+// Fields:
+//   - uid: string (required)
+//   - email: string (required, email format)
+//   - displayName: string
+//   - role: string (student|parent)
+//   - parentId: string (optional, for students)
+//   - xp: number (non-negative)
+//   - level: number (positive)
+//   - streak: number (non-negative)
+//   - tries: number (non-negative)
+//   - interests: list of strings (optional)
+//   - lastCompletedDate: string (ISO 8601)
+//
+// Collection: assignments
+// Document ID: assignmentId
+// Fields:
+//   - studentId: string (required)
+//   - parentId: string (optional)
+//   - title: string (required, max 100 chars)
+//   - subject: string (required, max 50 chars)
+//   - topic: string (max 50 chars)
+//   - dueDate: string (ISO 8601)
+//   - status: string (not-started|in-progress|completed)
+//   - xp: number (non-negative)
+//   - link: string (optional)
+//   - notes: string (optional)
+//   - createdAt: timestamp
+//
+// Collection: settings
+// Document ID: parentId
+// Fields:
+//   - parentId: string (required)
+//   - schoolHoursStart: string (HH:MM)
+//   - schoolHoursEnd: string (HH:MM)
+//   - blockedTopics: list of strings
+//
+// Collection: scrolls
+// Document ID: scrollId
+// Fields:
+//   - studentId: string (required)
+//   - topic: string (required)
+//   - imageUrl: string
+//   - createdAt: timestamp
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data;
+    }
+
+    function isParentOf(studentId) {
+      return isAuthenticated() && 
+             (exists(/databases/$(database)/documents/connections/$(request.auth.uid + "_" + studentId)) || isAdmin());
+    }
+
+    function isStudentOf(parentId) {
+      return isAuthenticated() && 
+             (exists(/databases/$(database)/documents/connections/$(parentId + "_" + request.auth.uid)) || isAdmin());
+    }
+
+    function isParent() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+             (request.auth.token.email == "pettigrewjoel@gmail.com" || 
+              request.auth.uid == "uWwopsh7H3QtSWyPKJQhGDcvJqi2" ||
+              (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isValidTime(timeStr) {
+      return timeStr is string && timeStr.matches("^\\d{2}:\\d{2}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid == userId &&
+             isValidEmail(data.email) &&
+             data.role in ['student', 'parent', 'admin', ''] &&
+             (!('xp' in data) || (data.xp is number && data.xp >= 0)) &&
+             (!('level' in data) || (data.level is number && data.level >= 1)) &&
+             (!('streak' in data) || (data.streak is number && data.streak >= 0)) &&
+             (!('tries' in data) || (data.tries is number && data.tries >= 0)) &&
+             (!('interests' in data) || (data.interests is list)) &&
+             (!('lastCompletedDate' in data) || (data.lastCompletedDate == null || isValidDateString(data.lastCompletedDate)));
+    }
+
+    function isValidAssignment(data) {
+      return data.keys().hasAll(['studentId', 'title', 'status', 'subject']) &&
+             data.studentId is string &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 500 &&
+             data.subject is string && data.subject.size() > 0 && data.subject.size() <= 200 &&
+             data.status in ['not-started', 'in-progress', 'completed'] &&
+             (!('topic' in data) || (data.topic is string && data.topic.size() <= 500)) &&
+             (!('xp' in data) || (data.xp is number)) &&
+             (!('link' in data) || (data.link is string)) &&
+             (!('notes' in data) || (data.notes is string)) &&
+             (!('parentId' in data) || (data.parentId is string)) &&
+             (!('priority' in data) || (data.priority is string)) &&
+             (!('dueDate' in data) || (data.dueDate is string));
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll(['parentId']) &&
+             data.parentId == request.auth.uid &&
+             (!('schoolHoursStart' in data) || isValidTime(data.schoolHoursStart)) &&
+             (!('schoolHoursEnd' in data) || isValidTime(data.schoolHoursEnd)) &&
+             (!('blockedTopics' in data) || (data.blockedTopics is list));
+    }
+
+    function isValidScroll(data) {
+      return data.keys().hasAll(['studentId', 'topic', 'imageUrl']) &&
+             data.studentId is string &&
+             data.topic is string &&
+             data.imageUrl is string &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidGameSession(data) {
+      return data.keys().hasAll(['studentId', 'gameId', 'score', 'createdAt']) &&
+             data.studentId is string &&
+             data.gameId is string &&
+             data.score is number &&
+             data.createdAt is string;
+    }
+
+    function isValidStudyHistory(data) {
+      return data.keys().hasAll(['studentId', 'topic', 'summary', 'createdAt']) &&
+             data.studentId is string &&
+             data.topic is string &&
+             data.summary is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidConnection(data) {
+      return data.keys().hasAll(['studentId', 'parentId', 'createdAt']) &&
+             data.studentId is string &&
+             data.parentId is string &&
+             data.createdAt is string;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isParentOf(userId) || isAdmin());
+      allow create: if isAuthenticated() && (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data, userId);
+      allow update: if isAuthenticated() && (
+        (isOwner(userId) && isValidUser(request.resource.data, userId) && 
+          (request.resource.data.role == resource.data.role || resource.data.role == '' || request.resource.data.role == '')) || 
+        (isParentOf(userId) && isValidUser(request.resource.data, userId)) ||
+        isAdmin()
+      );
+    }
+
+    // Connections Collection
+    match /connections/{connectionId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.studentId || 
+        request.auth.uid == resource.data.parentId ||
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && isValidConnection(request.resource.data) && (
+        request.auth.uid == request.resource.data.studentId || 
+        request.auth.uid == request.resource.data.parentId ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        request.auth.uid == resource.data.studentId || 
+        request.auth.uid == resource.data.parentId ||
+        isAdmin()
+      );
+    }
+
+    // Assignments Collection
+    match /assignments/{assignmentId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.studentId || 
+        isParentOf(resource.data.studentId) ||
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && isValidAssignment(request.resource.data) && (
+        request.auth.uid == request.resource.data.studentId || 
+        isParentOf(request.resource.data.studentId) ||
+        isAdmin()
+      );
+      allow update: if isAuthenticated() && isValidAssignment(request.resource.data) && (
+        request.auth.uid == resource.data.studentId || 
+        isParentOf(resource.data.studentId) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        request.auth.uid == resource.data.studentId || 
+        isParentOf(resource.data.studentId) ||
+        isAdmin()
+      );
+    }
+
+    // Settings Collection
+    match /settings/{parentId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == parentId || 
+        isStudentOf(parentId) ||
+        isAdmin()
+      );
+      allow write: if isAuthenticated() && request.auth.uid == parentId && isValidSettings(request.resource.data);
+    }
+
+    // Scrolls Collection
+    match /scrolls/{scrollId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.studentId || isParentOf(resource.data.studentId) || isAdmin());
+      allow create: if isAuthenticated() && (request.auth.uid == request.resource.data.studentId || isParentOf(request.resource.data.studentId) || isAdmin()) && isValidScroll(request.resource.data);
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.studentId || isParentOf(resource.data.studentId) || isAdmin());
+    }
+
+    // Game Sessions Collection
+    match /game_sessions/{sessionId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.studentId || isParentOf(resource.data.studentId) || isAdmin());
+      allow create: if isAuthenticated() && isValidGameSession(request.resource.data) && (
+        request.auth.uid == request.resource.data.studentId || 
+        isParentOf(request.resource.data.studentId) ||
+        isAdmin()
+      );
+    }
+
+    // Study History Collection
+    match /study_history/{historyId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.studentId || isParentOf(resource.data.studentId) || isAdmin());
+      allow create: if isAuthenticated() && isValidStudyHistory(request.resource.data) && (
+        request.auth.uid == request.resource.data.studentId || 
+        isParentOf(request.resource.data.studentId) ||
+        isAdmin()
+      );
+    }
+
+    // Answer Banks Collection
+    match /answer_banks/{bankId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.studentId || isParentOf(resource.data.studentId) || isAdmin());
+      allow create: if isAuthenticated() && (request.auth.uid == request.resource.data.studentId || isAdmin());
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.studentId || isAdmin());
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.studentId || isAdmin());
+    }
+  }
+}
