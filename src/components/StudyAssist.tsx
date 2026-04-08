@@ -76,7 +76,7 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
 
       const ai = new GoogleGenAI({ apiKey });
       
-      const prompt = `You are the AI engine for StudyQuest360 (Project: gen-lang-client-0561834523).
+      const prompt = `You are the AI engine for StudyQuest360 (Project: studyquest360-979db).
       Create an educational scroll about "${topic}". 
       Context: ${data.explanation}. 
       Key Points: ${data.keyTopics.join(', ')}.
@@ -176,7 +176,7 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
         ? `The student is interested in ${interests.join(', ')}. Use these interests to frame the explanation and create a fun analogy.`
         : '';
 
-      const prompt = `You are the AI engine for StudyQuest360 (Project: gen-lang-client-0561834523).
+      const prompt = `You are the AI engine for StudyQuest360 (Project: studyquest360-979db).
       You are an expert educational tutor. Your goal is to teach a student (${gradeContext}) about "${topic}" (Subject: ${subject}).
 
       ${interestContext}

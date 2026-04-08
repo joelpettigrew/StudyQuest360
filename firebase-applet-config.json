@@ -1,10 +1,10 @@
 {
-  "projectId": "gen-lang-client-0561834523",
-  "appId": "1:754225227437:web:ad64ff0d988f1e805cc824",
-  "apiKey": "AIzaSyAzgFkrJA8U54u2A5uo7x61eZ_nNTweOrM",
-  "authDomain": "gen-lang-client-0561834523.firebaseapp.com",
+  "projectId": "studyquest360-979db",
+  "appId": "1:953118627777:web:c4a992a7ee4a157d84c140",
+  "apiKey": "AIzaSyCCe5g9MuzAyWAW1wvgUiSdMiLn8tbGsKw",
+  "authDomain": "studyquest360-979db.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-87ee91e5-0b34-4e33-8569-806cafae00f8",
-  "storageBucket": "gen-lang-client-0561834523.firebasestorage.app",
-  "messagingSenderId": "754225227437",
+  "storageBucket": "studyquest360-979db.firebasestorage.app",
+  "messagingSenderId": "953118627777",
   "measurementId": ""
 }

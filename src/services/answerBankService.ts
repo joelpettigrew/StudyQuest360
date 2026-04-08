@@ -10,7 +10,7 @@ export async function generateAnswerBank(assignmentId: string | null, studentId:
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `You are the AI engine for StudyQuest360 (Project: gen-lang-client-0561834523). 
+      contents: `You are the AI engine for StudyQuest360 (Project: studyquest360-979db). 
       Create an educational answer bank for a ${grade} student studying ${subject}: ${topic}.
       
       Generate:
