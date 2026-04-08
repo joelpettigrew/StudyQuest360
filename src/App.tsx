@@ -798,7 +798,7 @@ function StudyQuestApp() {
         <header className="md:hidden flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200 sticky top-0 z-50 flex-shrink-0">
           <div className="flex items-center gap-2">
             <Trophy className="text-brand-500" size={24} />
-            <span className="text-lg font-black tracking-tighter uppercase">studyquest360</span>
+            <span className="text-base font-black tracking-tighter uppercase">studyquest360</span>
           </div>
           <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-rose-500 transition-colors">
             <LogOut size={20} />
@@ -808,14 +808,26 @@ function StudyQuestApp() {
         {/* Sidebar */}
         <aside className="hidden md:flex w-64 flex-col bg-[#fdf6e3] border-r-4 border-[#e6d5b8] p-6 gap-8 flex-shrink-0 overflow-y-auto custom-scrollbar relative">
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-5 pointer-events-none" />
-        <div className="flex items-center gap-3 relative z-10">
-          <div className="w-10 h-10 bg-[#8b5cf6] rounded-xl flex items-center justify-center text-white shadow-lg border-2 border-[#7c3aed]">
-            <Trophy size={24} />
+        <div className="flex items-center gap-2 relative z-10 min-w-0">
+          <div className="w-9 h-9 bg-[#8b5cf6] rounded-xl flex items-center justify-center text-white shadow-lg border-2 border-[#7c3aed] flex-shrink-0">
+            <Trophy size={20} />
           </div>
-          <h1 className="text-xl font-black tracking-tight text-[#4a3f35] uppercase tracking-widest">studyquest</h1>
+          <h1 className="text-base font-black tracking-tighter text-[#4a3f35] uppercase truncate">studyquest360</h1>
         </div>
 
         <nav className="flex flex-col gap-2 relative z-10">
+          {impersonatedStudent && (
+            <button 
+              onClick={() => {
+                setImpersonatedStudent(null);
+                if (isAdminUser) setAdminView('admin');
+              }}
+              className="flex items-center gap-2 px-3 py-2 w-full bg-brand-50 text-brand-700 rounded-xl font-black text-[11px] uppercase tracking-tight hover:bg-brand-100 transition-all mb-4 border-2 border-brand-200 shadow-sm whitespace-nowrap"
+            >
+              <Shield size={14} className="flex-shrink-0" />
+              Return to Portal
+            </button>
+          )}
           <SidebarLink icon={<LayoutDashboard size={20} />} label="Dashboard" active={!showGame && !showAnswerBank} onClick={() => { setShowGame(false); setShowAnswerBank(false); setIsStudyAssistOpen(false); }} />
           {isStudentView && (
             <>
@@ -861,7 +873,12 @@ function StudyQuestApp() {
 
         <div className="mt-auto pt-6 border-t-2 border-[#e6d5b8] space-y-4 relative z-10">
           {isStudentView && (
-            <div className="px-2">
+            <div className="px-2 space-y-4">
+              <div className="p-4 bg-white/50 border-2 border-[#e6d5b8] rounded-2xl space-y-1">
+                <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest">Your Student ID</p>
+                <p className="text-xs font-mono font-black text-[#8b5cf6] break-all select-all cursor-pointer" title="Click to select ID">{user.uid}</p>
+                <p className="text-[8px] text-[#8c7b68] font-medium italic">Share this with a parent to link accounts</p>
+              </div>
               <InterestsManager 
                 interests={activeUser.interests || []} 
                 onUpdate={(interests) => updateDoc(doc(db, 'users', activeUser.uid), { interests })} 

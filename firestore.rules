@@ -88,7 +88,7 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() &&
              (request.auth.token.email == "pettigrewjoel@gmail.com" || 
-              request.auth.uid == "uWwopsh7H3QtSWyPKJQhGDcvJqi2" ||
+              request.auth.uid == "2n7YSAK6VQetGGUIsROHB8RjmUh2" ||
               (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
@@ -127,14 +127,16 @@ service cloud.firestore {
              data.studentId is string &&
              data.title is string && data.title.size() > 0 && data.title.size() <= 500 &&
              data.subject is string && data.subject.size() > 0 && data.subject.size() <= 200 &&
-             data.status in ['not-started', 'in-progress', 'completed'] &&
+             data.status in ['pending', 'not-started', 'in-progress', 'completed'] &&
              (!('topic' in data) || (data.topic is string && data.topic.size() <= 500)) &&
              (!('xp' in data) || (data.xp is number)) &&
              (!('link' in data) || (data.link is string)) &&
              (!('notes' in data) || (data.notes is string)) &&
              (!('parentId' in data) || (data.parentId is string)) &&
              (!('priority' in data) || (data.priority is string)) &&
-             (!('dueDate' in data) || (data.dueDate is string));
+             (!('dueDate' in data) || (data.dueDate is string)) &&
+             (!('createdAt' in data) || (data.createdAt is timestamp || data.createdAt is string)) &&
+             (!('completedAt' in data) || (data.completedAt is string || data.completedAt == null));
     }
 
     function isValidSettings(data) {

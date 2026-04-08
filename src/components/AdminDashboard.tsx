@@ -49,7 +49,7 @@ export default function AdminDashboard({ users, assignments, gameSessions, onImp
             <Shield className="text-brand-500" size={32} />
             Admin Command Center
           </h2>
-          <p className="text-slate-500 font-medium">Monitoring the StudyQuest realm</p>
+          <p className="text-slate-500 font-medium">Monitoring the StudyQuest360 realm</p>
         </div>
       </header>
 

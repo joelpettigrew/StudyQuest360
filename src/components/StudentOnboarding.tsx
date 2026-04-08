@@ -9,7 +9,7 @@ interface StudentOnboardingProps {
 const steps = [
   {
     title: "Welcome, Adventurer!",
-    desc: "Your journey to mastering your homework starts here. StudyQuest turns your assignments into epic quests.",
+    desc: "Your journey to mastering your homework starts here. StudyQuest360 turns your assignments into epic quests.",
     icon: <ScrollText className="text-blue-500" size={48} />,
     color: "bg-blue-50"
   },

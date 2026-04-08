@@ -38,7 +38,7 @@ export default function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
                 <h2>What We Collect</h2>
               </div>
               <p className="text-slate-600 leading-relaxed text-lg">
-                StudyQuest collects minimal information to provide our service. This includes your name and email address provided via Google Login, and the homework assignments you enter into the system. For students, we also track game scores and study progress to help you learn.
+                StudyQuest360 collects minimal information to provide our service. This includes your name and email address provided via Google Login, and the homework assignments you enter into the system. For students, we also track game scores and study progress to help you learn.
               </p>
             </section>
 
@@ -48,7 +48,7 @@ export default function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
                 <h2>How We Use Your Data</h2>
               </div>
               <p className="text-slate-600 leading-relaxed text-lg">
-                Your data is used exclusively to power the StudyQuest experience. We use AI to help generate study guides and scrolls based on your assignments. We do not sell your data to third parties. Parents can see their linked students' progress to help support their learning journey.
+                Your data is used exclusively to power the StudyQuest360 experience. We use AI to help generate study guides and scrolls based on your assignments. We do not sell your data to third parties. Parents can see their linked students' progress to help support their learning journey.
               </p>
             </section>
 
@@ -67,13 +67,13 @@ export default function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
                 <h2>Children's Privacy</h2>
               </div>
               <p className="text-slate-600 leading-relaxed text-lg">
-                StudyQuest is designed for students. We require a parent to link with a student account to ensure a safe and supervised learning environment. We comply with COPPA guidelines and prioritize the safety of our younger users.
+                StudyQuest360 is designed for students. We require a parent to link with a student account to ensure a safe and supervised learning environment. We comply with COPPA guidelines and prioritize the safety of our younger users.
               </p>
             </section>
           </div>
 
           <div className="pt-12 border-t border-slate-100 text-center text-slate-400 font-medium">
-            <p>© 2026 StudyQuest. All rights reserved.</p>
+            <p>© 2026 StudyQuest360. All rights reserved.</p>
           </div>
         </motion.div>
       </div>

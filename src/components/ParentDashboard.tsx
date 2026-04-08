@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Settings as SettingsIcon, Shield, Clock, TrendingUp, Plus, Trash2, Gamepad2, LogOut } from 'lucide-react';
-import { db, doc, onSnapshot, setDoc, updateDoc, collection, query, where, auth, signOut, getDoc, handleFirestoreError, OperationType } from '../firebase';
-import { UserProfile, ParentSettings, Assignment } from '../types';
+import { Users, Settings as SettingsIcon, Shield, Clock, TrendingUp, Plus, Trash2, Gamepad2, LogOut, X, Calendar, Sparkles, Wand2, ExternalLink, Loader2, AlertTriangle } from 'lucide-react';
+import { db, doc, onSnapshot, setDoc, updateDoc, collection, query, where, auth, signOut, getDoc, handleFirestoreError, OperationType, addDoc, serverTimestamp } from '../firebase';
+import { UserProfile, ParentSettings, Assignment, Priority } from '../types';
 import { cn } from '../lib/utils';
+import { format } from 'date-fns';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface ParentDashboardProps {
   user: UserProfile;
@@ -17,6 +19,8 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [studentIdInput, setStudentIdInput] = useState('');
   const [isLinking, setIsLinking] = useState(false);
+  const [selectedStudentForQuest, setSelectedStudentForQuest] = useState<UserProfile | null>(null);
+  const [isQuestModalOpen, setIsQuestModalOpen] = useState(false);
 
   const [connections, setConnections] = useState<any[]>([]);
 
@@ -208,13 +212,25 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                   <div className="flex justify-between text-sm"><span className="text-slate-500 font-medium">Current Streak</span><span className="text-orange-600 font-bold">{student.streak} Days</span></div>
                   <div className="flex justify-between text-sm"><span className="text-slate-500 font-medium">Game Tries</span><span className="text-brand-600 font-bold">{student.tries}</span></div>
                 </div>
-                <button 
-                  onClick={() => onImpersonate(student)}
-                  className="w-full mt-6 flex items-center justify-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-xl font-bold hover:bg-brand-600 transition-all text-sm shadow-md shadow-brand-200"
-                >
-                  <Users size={16} />
-                  View as Student
-                </button>
+                <div className="flex flex-col gap-2 mt-6">
+                  <button 
+                    onClick={() => onImpersonate(student)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-xl font-bold hover:bg-brand-600 transition-all text-sm shadow-md shadow-brand-200"
+                  >
+                    <Users size={16} />
+                    View as Student
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setSelectedStudentForQuest(student);
+                      setIsQuestModalOpen(true);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white border-2 border-brand-500 text-brand-600 rounded-xl font-bold hover:bg-brand-50 transition-all text-sm"
+                  >
+                    <Plus size={16} />
+                    Add Quest
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -262,6 +278,129 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
           </div>
         </div>
       </div>
+
+      {/* Quest Modal */}
+      <AnimatePresence>
+        {isQuestModalOpen && selectedStudentForQuest && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-xl bg-white rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl overflow-hidden relative"
+            >
+              <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-5 pointer-events-none" />
+              <div className="relative z-10">
+                <ParentAddAssignmentForm 
+                  student={selectedStudentForQuest}
+                  onClose={() => setIsQuestModalOpen(false)}
+                  onAdd={async (assignmentData) => {
+                    try {
+                      await addDoc(collection(db, 'assignments'), {
+                        ...assignmentData,
+                        studentId: selectedStudentForQuest.uid,
+                        parentId: user.uid,
+                        status: 'pending',
+                        createdAt: serverTimestamp()
+                      });
+                      setIsQuestModalOpen(false);
+                      alert(`Quest "${assignmentData.title}" assigned to ${selectedStudentForQuest.displayName}!`);
+                    } catch (error) {
+                      handleFirestoreError(error, OperationType.WRITE, 'assignments');
+                    }
+                  }}
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+function ParentAddAssignmentForm({ student, onAdd, onClose }: { student: UserProfile, onAdd: (a: any) => Promise<void>, onClose: () => void }) {
+  const [title, setTitle] = useState('');
+  const [subject, setSubject] = useState('');
+  const [topic, setTopic] = useState('');
+  const [link, setLink] = useState('');
+  const [dueDate, setDueDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [priority, setPriority] = useState<Priority>('medium');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onAdd({ 
+        title, 
+        subject, 
+        topic: topic || title, 
+        link,
+        dueDate: new Date(dueDate + 'T12:00:00').toISOString(), 
+        priority, 
+        xp: 100 
+      });
+    } catch (err: any) {
+      console.error("Add quest error:", err);
+      setError(err.message || "Failed to add quest.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="p-8 space-y-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-2xl font-black text-slate-900">New Quest</h3>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">For {student.displayName}</p>
+        </div>
+        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-900"><X size={24} /></button>
+      </div>
+
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-sm font-bold flex items-center gap-2">
+          <AlertTriangle size={16} />
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Quest Title</label>
+          <input autoFocus required placeholder="e.g., Math Homework" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={title} onChange={e => setTitle(e.target.value)} />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Subject</label>
+            <input required placeholder="e.g., Math" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={subject} onChange={e => setSubject(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Due Date</label>
+            <input type="date" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Study Topic (for AI Assist)</label>
+          <input placeholder="e.g., Fractions" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={topic} onChange={e => setTopic(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Assignment Link (optional)</label>
+          <input placeholder="e.g., Google Doc URL" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={link} onChange={e => setLink(e.target.value)} />
+        </div>
+      </div>
+      <button 
+        type="submit" 
+        disabled={isSubmitting}
+        className="w-full py-4 bg-brand-500 text-white rounded-2xl font-bold shadow-xl shadow-brand-200 flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+        {isSubmitting && <Loader2 className="animate-spin" size={20} />}
+        {isSubmitting ? 'Assigning Quest...' : 'Assign Quest'}
+      </button>
+    </form>
   );
 }
