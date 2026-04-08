@@ -41,6 +41,7 @@ export interface Assignment {
   xp: number;
   link?: string;
   notes?: string;
+  createdAt?: string;
   completedAt?: string | null;
 }
 

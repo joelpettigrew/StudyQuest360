@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Settings as SettingsIcon, Shield, Clock, TrendingUp, Plus, Trash2, Gamepad2, LogOut, X, Calendar, Sparkles, Wand2, ExternalLink, Loader2, AlertTriangle } from 'lucide-react';
 import { db, doc, onSnapshot, setDoc, updateDoc, collection, query, where, auth, signOut, getDoc, handleFirestoreError, OperationType, addDoc, serverTimestamp } from '../firebase';
 import { UserProfile, ParentSettings, Assignment, Priority } from '../types';
 import { cn } from '../lib/utils';
-import { format } from 'date-fns';
+import { format, subDays, isSameDay, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface ParentDashboardProps {
   user: UserProfile;
@@ -136,68 +137,112 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
     { id: 'target-practice', title: 'Target Practice' }
   ];
 
+  const getStudentChartData = (studentId: string) => {
+    const data = [];
+    const studentAssignments = assignments.filter(a => a.studentId === studentId);
+    
+    for (let i = 13; i >= 0; i--) {
+      const date = subDays(startOfDay(new Date()), i);
+      
+      const created = studentAssignments.filter(a => {
+        // Fallback: if createdAt is missing, use dueDate as a proxy for the creation period 
+        // (or just skip if we want strict accuracy, but fallback helps with existing data)
+        const createdDate = a.createdAt ? new Date(a.createdAt) : (a.dueDate ? new Date(a.dueDate) : null);
+        return createdDate && isSameDay(createdDate, date);
+      }).length;
+
+      const completed = studentAssignments.filter(a => {
+        if (!a.completedAt) return false;
+        const completedDate = new Date(a.completedAt);
+        return isSameDay(completedDate, date);
+      }).length;
+
+      data.push({
+        date: format(date, 'MMM dd'),
+        created,
+        completed
+      });
+    }
+    return data;
+  };
+
   return (
     <div className="max-w-6xl mx-auto p-6 md:p-12 space-y-12">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex items-center justify-between w-full md:w-auto">
-          <div>
-            <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Parent Command Center 🛡️</h2>
-            <p className="text-slate-500 font-medium">Monitoring progress and managing safety.</p>
-          </div>
-          <button 
-            onClick={() => signOut(auth)}
-            className="md:hidden p-3 bg-white border border-slate-200 text-slate-400 hover:text-rose-500 rounded-2xl transition-all shadow-sm"
-          >
-            <LogOut size={24} />
-          </button>
-        </div>
-        <div className="flex flex-col md:flex-row gap-4 items-center">
-          <div className="flex items-center gap-4 p-4 bg-white rounded-2xl border border-slate-200 shadow-sm w-full md:w-auto">
-            <Users className="text-brand-500" size={24} />
+      <header className="flex flex-col lg:flex-row lg:items-start justify-between gap-8">
+        <div className="flex-1">
+          <div className="flex items-center justify-between w-full md:w-auto">
             <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Linked Students</p>
-              <p className="text-lg font-bold text-slate-900">{students.length}</p>
+              <h2 className="text-3xl font-black text-slate-900 mb-2">Parent Command Center 🛡️</h2>
+              <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Monitoring progress and managing safety.</p>
             </div>
+            <button 
+              onClick={() => signOut(auth)}
+              className="md:hidden p-3 bg-white border border-slate-200 text-slate-400 hover:text-rose-500 rounded-2xl transition-all shadow-sm"
+            >
+              <LogOut size={20} />
+            </button>
           </div>
-          <div className="flex items-center gap-4 p-4 bg-brand-50 rounded-2xl border border-brand-100 shadow-sm w-full md:w-auto">
-            <Shield className="text-brand-600" size={24} />
-            <div>
-              <p className="text-xs font-bold text-brand-400 uppercase tracking-widest">Your Parent ID</p>
+
+          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm">
+              <div className="flex items-center gap-3 text-brand-600 mb-2">
+                <Users size={20} />
+                <span className="font-black uppercase tracking-widest text-[10px]">Linked Students</span>
+              </div>
+              <p className="text-3xl font-black text-slate-900">{students.length}</p>
+            </div>
+            <div className="bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm">
+              <div className="flex items-center gap-3 text-brand-600 mb-2">
+                <Shield size={20} />
+                <span className="font-black uppercase tracking-widest text-[10px]">Your Parent ID</span>
+              </div>
               <p className="text-sm font-mono font-bold text-brand-900 select-all cursor-pointer" title="Click to select">{user.uid}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <input 
-              type="text" 
-              placeholder="Enter Student ID..." 
-              className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:border-brand-500 transition-all shadow-sm w-full md:w-48"
-              value={studentIdInput}
-              onChange={(e) => setStudentIdInput(e.target.value)}
-            />
-            <button 
-              onClick={handleLinkStudent}
-              disabled={isLinking}
-              className="px-4 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-sm whitespace-nowrap disabled:opacity-50"
-            >
-              Link Student
-            </button>
-          </div>
+        </div>
+
+        <div className="hidden lg:flex flex-col gap-4">
           <button 
             onClick={() => signOut(auth)}
-            className="hidden md:flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-bold hover:text-rose-600 hover:border-rose-100 transition-all shadow-sm"
+            className="flex items-center gap-3 px-6 py-4 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-rose-50 hover:text-rose-500 hover:border-rose-100 transition-all shadow-sm group"
           >
-            <LogOut size={20} />
+            <LogOut size={20} className="group-hover:-translate-x-1 transition-transform" />
             Sign Out
           </button>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
-          <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><TrendingUp size={24} className="text-emerald-500" />Student Activity</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {students.map(student => (
-              <div key={student.uid} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+      <div className="flex flex-col md:flex-row gap-6 items-center bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
+        <div className="flex-1 w-full">
+          <h3 className="text-xl font-black text-slate-900 mb-2">Link New Student</h3>
+          <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Enter your student's unique ID to start monitoring their progress.</p>
+        </div>
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <input 
+            type="text" 
+            placeholder="Enter Student ID..." 
+            className="flex-1 md:w-64 px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold focus:outline-none focus:border-brand-500 transition-all shadow-inner"
+            value={studentIdInput}
+            onChange={(e) => setStudentIdInput(e.target.value)}
+          />
+          <button 
+            onClick={handleLinkStudent}
+            disabled={isLinking}
+            className="px-8 py-4 bg-brand-500 text-white rounded-2xl font-bold hover:bg-brand-600 transition-all shadow-xl shadow-brand-100 flex items-center gap-2 disabled:opacity-50"
+          >
+            {isLinking ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
+            Link Student
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><TrendingUp size={24} className="text-emerald-500" />Student Activity</h3>
+        <div className="grid grid-cols-1 gap-8">
+          {students.map(student => (
+            <div key={student.uid} className="flex flex-col xl:flex-row gap-8">
+              {/* Student Card */}
+              <div className="w-full xl:w-[350px] bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-4 mb-6">
                   <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center border-2 border-brand-500 overflow-hidden">
                     <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${student.uid}`} alt="Avatar" className="w-full h-full" />
@@ -232,49 +277,121 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                   </button>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
 
-        <div className="space-y-6">
-          <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><SettingsIcon size={24} className="text-slate-500" />Controls</h3>
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-8">
-            <div>
-              <div className="flex items-center gap-2 mb-4"><Clock size={18} className="text-brand-500" /><h4 className="text-sm font-bold text-slate-900">School Hours (Game Locked)</h4></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Start</label><input type="time" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold" value={settings?.schoolHoursStart || '08:00'} onChange={(e) => updateHours(e.target.value, settings?.schoolHoursEnd || '15:00')} /></div>
-                <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">End</label><input type="time" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold" value={settings?.schoolHoursEnd || '15:00'} onChange={(e) => updateHours(settings?.schoolHoursStart || '08:00', e.target.value)} /></div>
+              {/* Activity Graph for this student */}
+              <div className="flex-1 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm min-h-[300px]">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3 text-slate-900">
+                    <TrendingUp size={20} className="text-brand-500" />
+                    <h3 className="font-black uppercase tracking-widest text-xs">Activity (Last 14 Days)</h3>
+                  </div>
+                </div>
+                <div className="h-[200px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={getStudentChartData(student.uid)}>
+                      <defs>
+                        <linearGradient id={`colorCreated-${student.uid}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id={`colorCompleted-${student.uid}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="date" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+                        interval={3}
+                      />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+                      />
+                      <Tooltip 
+                        contentStyle={{ 
+                          borderRadius: '1rem', 
+                          border: 'none', 
+                          boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                          fontSize: '12px',
+                          fontWeight: 700
+                        }}
+                      />
+                      <Legend 
+                        verticalAlign="top" 
+                        align="right" 
+                        iconType="circle"
+                        wrapperStyle={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', paddingBottom: '20px' }}
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="created" 
+                        name="Quests Created"
+                        stroke="#8b5cf6" 
+                        strokeWidth={3}
+                        fillOpacity={1} 
+                        fill={`url(#colorCreated-${student.uid})`} 
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="completed" 
+                        name="Quests Done"
+                        stroke="#10b981" 
+                        strokeWidth={3}
+                        fillOpacity={1} 
+                        fill={`url(#colorCompleted-${student.uid})`} 
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </div>
-            <div>
-              <div className="flex items-center gap-2 mb-4"><Shield size={18} className="text-rose-500" /><h4 className="text-sm font-bold text-slate-900">Blocked Topics</h4></div>
-              <div className="flex gap-2 mb-4"><input type="text" placeholder="e.g., Video Games" className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold" value={newBlockedTopic} onChange={(e) => setNewBlockedTopic(e.target.value)} /><button onClick={addBlockedTopic} className="p-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-all"><Plus size={20} /></button></div>
-              <div className="flex flex-wrap gap-2">{settings?.blockedTopics.map(topic => (<span key={topic} className="flex items-center gap-1 px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">{topic}<button onClick={() => removeBlockedTopic(topic)} className="hover:text-rose-500"><Trash2 size={12} /></button></span>))}</div>
-            </div>
+          ))}
+        </div>
+      </div>
 
-            <div>
-              <div className="flex items-center gap-2 mb-4"><Gamepad2 size={18} className="text-brand-500" /><h4 className="text-sm font-bold text-slate-900">Active Game</h4></div>
-              <select 
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold"
-                value={settings?.activeGameId || 'concept-match'}
-                onChange={(e) => updateActiveGame(e.target.value)}
-              >
-                {games.map(game => (
-                  <option key={game.id} value={game.id}>{game.title}</option>
-                ))}
-              </select>
+      <div className="space-y-6">
+        <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><SettingsIcon size={24} className="text-slate-500" />Controls</h3>
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-8">
+          <div>
+            <div className="flex items-center gap-2 mb-4"><Clock size={18} className="text-brand-500" /><h4 className="text-sm font-bold text-slate-900">School Hours (Game Locked)</h4></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Start</label><input type="time" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold" value={settings?.schoolHoursStart || '08:00'} onChange={(e) => updateHours(e.target.value, settings?.schoolHoursEnd || '15:00')} /></div>
+              <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">End</label><input type="time" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold" value={settings?.schoolHoursEnd || '15:00'} onChange={(e) => updateHours(settings?.schoolHoursStart || '08:00', e.target.value)} /></div>
             </div>
+          </div>
+          <div>
+            <div className="flex items-center gap-2 mb-4"><Shield size={18} className="text-rose-500" /><h4 className="text-sm font-bold text-slate-900">Blocked Topics</h4></div>
+            <div className="flex gap-2 mb-4"><input type="text" placeholder="e.g., Video Games" className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold" value={newBlockedTopic} onChange={(e) => setNewBlockedTopic(e.target.value)} /><button onClick={addBlockedTopic} className="p-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-all"><Plus size={20} /></button></div>
+            <div className="flex flex-wrap gap-2">{settings?.blockedTopics.map(topic => (<span key={topic} className="flex items-center gap-1 px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">{topic}<button onClick={() => removeBlockedTopic(topic)} className="hover:text-rose-500"><Trash2 size={12} /></button></span>))}</div>
+          </div>
 
-            <div className="pt-6 border-t border-slate-100">
-              <button 
-                onClick={onReset}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-rose-50 text-rose-600 rounded-2xl font-bold hover:bg-rose-100 transition-all border border-rose-100"
-              >
-                <Trash2 size={18} />
-                Reset Account Role
-              </button>
-              <p className="mt-2 text-[10px] text-slate-400 text-center font-medium uppercase tracking-widest">Danger Zone: Clears role & progress</p>
-            </div>
+          <div>
+            <div className="flex items-center gap-2 mb-4"><Gamepad2 size={18} className="text-brand-500" /><h4 className="text-sm font-bold text-slate-900">Active Game</h4></div>
+            <select 
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold"
+              value={settings?.activeGameId || 'concept-match'}
+              onChange={(e) => updateActiveGame(e.target.value)}
+            >
+              {games.map(game => (
+                <option key={game.id} value={game.id}>{game.title}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="pt-6 border-t border-slate-100">
+            <button 
+              onClick={onReset}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-rose-50 text-rose-600 rounded-2xl font-bold hover:bg-rose-100 transition-all border border-rose-100"
+            >
+              <Trash2 size={18} />
+              Reset Account Role
+            </button>
+            <p className="mt-2 text-[10px] text-slate-400 text-center font-medium uppercase tracking-widest">Danger Zone: Clears role & progress</p>
           </div>
         </div>
       </div>

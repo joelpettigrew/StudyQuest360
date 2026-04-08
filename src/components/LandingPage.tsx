@@ -178,7 +178,10 @@ export default function LandingPage({ onLogin, isLoggingIn, onShowPrivacy }: Lan
       </section>
 
       <footer className="py-12 px-6 bg-slate-950 border-t border-slate-900 text-center space-y-4">
-        <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">© 2026 StudyQuest360. All rights reserved.</p>
+        <div className="space-y-2">
+          <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">© 2026 StudyQuest360. All rights reserved.</p>
+          <p className="text-slate-600 font-bold uppercase tracking-widest text-[10px]">powered by PettigrewLab LLC</p>
+        </div>
         <button 
           onClick={onShowPrivacy}
           className="text-slate-400 hover:text-white transition-colors font-bold text-sm underline underline-offset-4"
