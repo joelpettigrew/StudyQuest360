@@ -47,6 +47,8 @@ import {
   Crown,
   Gem,
   Compass,
+  MousePointer2,
+  Heart,
   Scroll as ScrollIcon,
   Star,
   Moon,
@@ -378,7 +380,7 @@ function StudyQuestApp() {
       longestStreak: 0,
       tries: 5, // Give 5 initial tries (Keys)
       lastCompletedDate: null,
-      onboarded: false
+      onboarded: true
     };
 
     if (parentId) {
@@ -405,6 +407,7 @@ function StudyQuestApp() {
       setUser(profile);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
+      throw error;
     }
   };
 
@@ -567,7 +570,8 @@ function StudyQuestApp() {
   }, [parentSettings]);
 
   const subjects = useMemo(() => {
-    return ['all', ...Array.from(new Set(assignments.map(a => a.subject)))];
+    const uniqueSubjects = new Set(assignments.map(a => a.subject.trim().toLowerCase()));
+    return ['all', ...Array.from(uniqueSubjects).map(s => s.charAt(0).toUpperCase() + s.slice(1))];
   }, [assignments]);
 
   const filteredAssignments = useMemo(() => {
@@ -576,7 +580,7 @@ function StudyQuestApp() {
                            a.subject.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
-      const matchesSubject = subjectFilter === 'all' || a.subject === subjectFilter;
+      const matchesSubject = subjectFilter === 'all' || a.subject.trim().toLowerCase() === subjectFilter.toLowerCase();
       if (!matchesSubject) return false;
 
       if (filter === 'all') return a.status !== 'completed';
@@ -675,16 +679,30 @@ function StudyQuestApp() {
                   />
                   <button 
                     onClick={async () => {
-                      const pid = (document.getElementById('parent-id-input') as HTMLInputElement).value;
+                      const pidInput = (document.getElementById('parent-id-input') as HTMLInputElement).value;
+                      const pid = pidInput.trim();
                       if (pid) {
                         try {
+                          // Check if parent exists and is a parent
+                          const parentDoc = await getDoc(doc(db, 'users', pid));
+                          if (!parentDoc.exists()) {
+                            setGlobalError("Parent ID not found. Please check the ID and try again.");
+                            return;
+                          }
+                          const parentData = parentDoc.data() as UserProfile;
+                          if (parentData.role !== 'parent' && parentData.role !== 'admin') {
+                            setGlobalError("This ID does not belong to a parent account.");
+                            return;
+                          }
+
                           await setDoc(doc(db, 'connections', `${pid}_${user.uid}`), {
                             studentId: user.uid,
                             parentId: pid,
                             createdAt: new Date().toISOString()
                           });
                         } catch (e) {
-                          alert("Failed to link. Check the ID and try again.");
+                          console.error("Link error:", e);
+                          setGlobalError("Failed to link. Please try again.");
                         }
                       }
                     }}
@@ -766,7 +784,7 @@ function StudyQuestApp() {
                     onClick={() => {
                       const code = (document.getElementById('parent-link-code') as HTMLInputElement).value;
                       if (code) handleSelectRole('student', code);
-                      else alert("Please enter a valid code!");
+                      else setGlobalError("Please enter a valid code!");
                     }}
                     className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all"
                   >
@@ -895,8 +913,8 @@ function StudyQuestApp() {
           {isStudentView && (
             <div className="px-2 space-y-4">
               <div className="p-4 bg-white/50 border-2 border-[#e6d5b8] rounded-2xl space-y-1">
-                <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest">Your Student ID</p>
-                <p className="text-xs font-mono font-black text-[#8b5cf6] break-all select-all cursor-pointer" title="Click to select ID">{user.uid}</p>
+                <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest">{impersonatedStudent ? "Student ID" : "Your Student ID"}</p>
+                <p className="text-xs font-mono font-black text-[#8b5cf6] break-all select-all cursor-pointer" title="Click to select ID">{activeUser.uid}</p>
                 <p className="text-[8px] text-[#8c7b68] font-medium italic">Share this with a parent to link accounts</p>
               </div>
               <InterestsManager 
@@ -1051,60 +1069,15 @@ function StudyQuestApp() {
 
             <div className="relative font-serif">
               <AnimatePresence mode="wait">
-                {isTrainingOpen && trainingAssignment ? (
-                  <motion.div 
-                    key="training-module"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className="relative h-[80vh]"
-                  >
-                    <TrainingModule 
-                      assignment={trainingAssignment}
-                      user={activeUser}
-                      onClose={() => {
-                        setIsTrainingOpen(false);
-                        setTrainingAssignment(null);
-                      }}
-                    />
-                  </motion.div>
-                ) : isStudyAssistOpen ? (
-                  <motion.div 
-                    key="study-assist"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className="relative"
-                  >
-                    <button 
-                      onClick={() => {
-                        setIsStudyAssistOpen(false);
-                        setSelectedTopic('');
-                      }}
-                      className="absolute -top-6 -right-6 z-50 w-12 h-12 bg-white border-4 border-[#e6d5b8] text-[#4a3f35] rounded-full flex items-center justify-center shadow-xl hover:bg-rose-50 hover:text-rose-500 hover:border-rose-200 transition-all hover:scale-110 active:scale-95 group"
-                    >
-                      <X size={24} className="group-hover:rotate-90 transition-transform" />
-                    </button>
-                    <StudyAssist 
-                      topic={selectedTopic} 
-                      subject={selectedAssignment?.subject || ''}
-                      blockedTopics={parentSettings?.blockedTopics || []} 
-                      interests={activeUser.interests}
-                      grade={activeUser.grade}
-                      studentId={activeUser.uid}
-                      history={studyHistory}
-                    />
-                  </motion.div>
-                ) : (
-                  <motion.div 
-                    key="quest-board"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    className="space-y-8" 
-                    ref={questBoardRef}
-                  >
-                    <section className="bg-[#fdf6e3] rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl overflow-hidden flex flex-col min-h-[800px] relative">
+                <motion.div 
+                  key="quest-board"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="space-y-8" 
+                  ref={questBoardRef}
+                >
+                  <section className="bg-[#fdf6e3] rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl overflow-hidden flex flex-col min-h-[800px] relative">
                       <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-10 pointer-events-none" />
                       
                       <div className="p-10 border-b-4 border-[#e6d5b8] flex flex-col md:flex-row md:items-center justify-between gap-8 bg-white/50 relative z-10">
@@ -1192,7 +1165,6 @@ function StudyQuestApp() {
                       </div>
                     </section>
                   </motion.div>
-                )}
               </AnimatePresence>
             </div>
           </div>
@@ -1202,6 +1174,76 @@ function StudyQuestApp() {
 
     {/* Reset Confirmation Modal */}
       <AnimatePresence>
+        {isTrainingOpen && trainingAssignment && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              className="absolute inset-0 bg-slate-900/80 backdrop-blur-md" 
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.9, y: 20 }} 
+              className="relative w-full max-w-6xl h-full max-h-[90vh] bg-white rounded-[3rem] shadow-2xl overflow-hidden"
+            >
+              <TrainingModule 
+                assignment={trainingAssignment}
+                user={activeUser}
+                onClose={() => {
+                  setIsTrainingOpen(false);
+                  setTrainingAssignment(null);
+                }}
+              />
+            </motion.div>
+          </div>
+        )}
+
+        {isStudyAssistOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              className="absolute inset-0 bg-slate-900/80 backdrop-blur-md" 
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.9, y: 20 }} 
+              className="relative w-full max-w-6xl h-full max-h-[90vh] bg-white rounded-[3rem] shadow-2xl overflow-hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900">Study Assistant</h3>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Topic: {selectedTopic}</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setIsStudyAssistOpen(false);
+                    setSelectedTopic('');
+                  }}
+                  className="p-3 bg-white border border-slate-200 text-slate-400 hover:text-slate-900 rounded-2xl transition-all shadow-sm"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <StudyAssist 
+                  topic={selectedTopic} 
+                  subject={selectedAssignment?.subject || ''}
+                  blockedTopics={parentSettings?.blockedTopics || []} 
+                  interests={activeUser.interests}
+                  grade={activeUser.grade}
+                  studentId={activeUser.uid}
+                  history={studyHistory}
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {showResetConfirm && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
             <motion.div 
@@ -1337,7 +1379,9 @@ function GameZone({ user, assignments, answerBanks, isSchoolHours, onTryUsed, on
       try {
         const dateStr = s.createdAt || (s as any).date;
         if (!dateStr) return false;
-        return isSameDay(parseISO(dateStr), day);
+        // Handle both Firestore Timestamp and ISO string
+        const sessionDate = (dateStr as any).toDate ? (dateStr as any).toDate() : parseISO(dateStr as string);
+        return isSameDay(sessionDate, day);
       } catch (e) {
         return false;
       }
@@ -1540,6 +1584,8 @@ function RoleSelection({ user, onSelect }: { user: UserProfile, onSelect: (role:
   const [role, setRole] = useState<Role | null>(null);
   const [parentId, setParentId] = useState('');
   const [grade, setGrade] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const grades = ['Kindergarten', '1st Grade', '2nd Grade', '3rd Grade', '4th Grade', '5th Grade', '6th Grade', '7th Grade', '8th Grade', '9th Grade', '10th Grade', '11th Grade', '12th Grade'];
 
@@ -1627,15 +1673,33 @@ function RoleSelection({ user, onSelect }: { user: UserProfile, onSelect: (role:
         </AnimatePresence>
 
         <button 
-          disabled={!role || (role === 'student' && !grade)}
-          onClick={() => role && onSelect(role, parentId, grade)}
+          disabled={!role || (role === 'student' && !grade) || isSubmitting}
+          onClick={async () => {
+            if (!role) return;
+            setIsSubmitting(true);
+            setError(null);
+            try {
+              await onSelect(role, parentId, grade);
+            } catch (err: any) {
+              setError(err.message || "Failed to save profile. Please try again.");
+              setIsSubmitting(false);
+            }
+          }}
           className={cn(
-            "w-full py-5 rounded-2xl font-black text-xl shadow-xl transition-all",
+            "w-full py-5 rounded-2xl font-black text-xl shadow-xl transition-all flex items-center justify-center gap-3",
             (role && (role !== 'student' || grade)) ? "bg-slate-900 text-white hover:scale-[1.02] active:scale-[0.98]" : "bg-slate-100 text-slate-400 cursor-not-allowed"
           )}
         >
+          {isSubmitting ? <Loader2 className="animate-spin" size={24} /> : null}
           Begin Adventure
         </button>
+
+        {error && (
+          <div className="p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-sm font-bold flex items-center gap-2">
+            <AlertTriangle size={16} />
+            {error}
+          </div>
+        )}
       </motion.div>
     </div>
   );
@@ -1645,78 +1709,151 @@ function RoleSelection({ user, onSelect }: { user: UserProfile, onSelect: (role:
 
 function InterestsManager({ interests, onUpdate }: { interests: string[], onUpdate: (interests: string[]) => void }) {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [selectedTopic, setSelectedTopic] = useState<string>('');
 
-  const INTEREST_CATEGORIES: Record<string, string[]> = {
-    "Video Games": ["Minecraft", "Roblox", "Fortnite", "Starcraft", "Mario games", "Pokémon", "Zelda", "Racing games", "Sports games (FIFA, Madden)", "Puzzle games (Tetris, Portal)"],
-    "Sports": ["Basketball", "Soccer", "Football", "Baseball", "Swimming", "Track & field", "Skateboarding", "Gymnastics", "Martial arts", "Surfing"],
-    "Fantasy": ["Superheroes", "Dragons", "Wizards", "Knights", "Magic schools", "Monsters", "Space heroes", "Time travel", "Mythology", "D&D"],
-    "Transportation": ["Race cars", "Monster trucks", "Construction vehicles", "Airplanes", "Rockets", "Trains", "Motorcycles", "Electric cars", "Boats & submarines", "Robots"],
-    "Animals": ["Dinosaurs", "Jungle animals", "Ocean animals", "Pets (dogs/cats)", "Birds", "Insects", "Farm animals", "Arctic animals", "Reptiles", "Endangered species"]
-  };
-
-  const handleTopicChange = (topic: string) => {
-    setSelectedTopic(topic);
-    if (selectedCategory && topic) {
-      const combined = `${selectedCategory}: ${topic}`;
-      if (!interests.includes(combined)) {
-        onUpdate([...interests, combined]);
-      }
+  const INTEREST_CATEGORIES: Record<string, { icon: React.ReactNode, topics: string[], color: string, gradient: string }> = {
+    "Video Games": { 
+      icon: <Gamepad2 size={18} />, 
+      color: "text-indigo-600",
+      gradient: "from-indigo-500 to-purple-600",
+      topics: ["Minecraft", "Roblox", "Fortnite", "Starcraft", "Mario games", "Pokémon", "Zelda", "Racing games", "Sports games", "Puzzle games"]
+    },
+    "Sports": { 
+      icon: <Trophy size={18} />, 
+      color: "text-emerald-600",
+      gradient: "from-emerald-500 to-teal-600",
+      topics: ["Basketball", "Soccer", "Football", "Baseball", "Swimming", "Track & field", "Skateboarding", "Gymnastics", "Martial arts", "Surfing"]
+    },
+    "Fantasy": { 
+      icon: <Sparkles size={18} />, 
+      color: "text-amber-600",
+      gradient: "from-amber-400 to-orange-600",
+      topics: ["Superheroes", "Dragons", "Wizards", "Knights", "Magic schools", "Monsters", "Space heroes", "Time travel", "Mythology", "D&D"]
+    },
+    "Transportation": { 
+      icon: <Zap size={18} />, 
+      color: "text-blue-600",
+      gradient: "from-blue-500 to-cyan-600",
+      topics: ["Race cars", "Monster trucks", "Construction vehicles", "Airplanes", "Rockets", "Trains", "Motorcycles", "Electric cars", "Boats", "Robots"]
+    },
+    "Animals": { 
+      icon: <Heart size={18} />, 
+      color: "text-rose-600",
+      gradient: "from-rose-500 to-pink-600",
+      topics: ["Dinosaurs", "Jungle animals", "Ocean animals", "Pets", "Birds", "Insects", "Farm animals", "Arctic animals", "Reptiles", "Endangered species"]
     }
   };
 
-  const removeInterest = (interest: string) => {
-    onUpdate(interests.filter(i => i !== interest));
+  const handleTopicToggle = (topic: string) => {
+    const combined = `${selectedCategory}: ${topic}`;
+    if (interests.includes(combined)) {
+      onUpdate(interests.filter(i => i !== combined));
+    } else {
+      onUpdate([...interests, combined]);
+    }
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 px-2">
-        <Sparkles size={16} className="text-[#8c7b68]" />
-        <h4 className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest">My Interests</h4>
+    <div className="space-y-4 bg-white/40 backdrop-blur-sm rounded-[2rem] p-4 border-2 border-[#e6d5b8] shadow-inner">
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 bg-brand-100 rounded-lg flex items-center justify-center text-brand-600">
+            <Sparkles size={14} />
+          </div>
+          <h4 className="text-[10px] font-black text-[#4a3f35] uppercase tracking-widest font-serif">My Interests</h4>
+        </div>
+        <span className="text-[9px] font-black text-brand-500 bg-white px-2 py-0.5 rounded-full border border-brand-100">{interests.length}</span>
       </div>
       
-      <div className="flex flex-wrap gap-2 px-2">
-        {interests.map(interest => (
-          <span 
-            key={interest} 
-            className="flex items-center gap-1 px-3 py-1 bg-white/50 border-2 border-[#e6d5b8] rounded-full text-[10px] font-black text-[#4a3f35] uppercase tracking-wider group hover:border-[#8b5cf6] transition-all"
+      {/* Category Selection Grid */}
+      <div className="grid grid-cols-5 gap-1.5">
+        {Object.entries(INTEREST_CATEGORIES).map(([cat, data]) => (
+          <button
+            key={cat}
+            onClick={() => setSelectedCategory(cat === selectedCategory ? '' : cat)}
+            title={cat}
+            className={cn(
+              "aspect-square rounded-xl flex items-center justify-center transition-all relative group",
+              selectedCategory === cat 
+                ? "bg-brand-500 text-white shadow-lg scale-110 z-10" 
+                : "bg-white border border-[#e6d5b8] text-slate-400 hover:border-brand-300 hover:text-brand-500"
+            )}
           >
-            {interest.split(': ')[1] || interest}
-            <button onClick={() => removeInterest(interest)} className="text-[#8c7b68] hover:text-rose-500">
-              <X size={12} />
-            </button>
-          </span>
+            {data.icon}
+            {selectedCategory === cat && (
+              <motion.div layoutId="cat-indicator" className="absolute -bottom-1 w-1 h-1 bg-white rounded-full" />
+            )}
+          </button>
         ))}
       </div>
 
-      <div className="px-2 space-y-2">
-        <select 
-          value={selectedCategory}
-          onChange={(e) => {
-            setSelectedCategory(e.target.value);
-            setSelectedTopic('');
-          }}
-          className="w-full px-3 py-2 bg-white/50 border-2 border-[#e6d5b8] rounded-xl text-xs font-bold focus:outline-none focus:border-[#8b5cf6] transition-all text-[#4a3f35] appearance-none cursor-pointer"
-        >
-          <option value="">Select Category...</option>
-          {Object.keys(INTEREST_CATEGORIES).map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </select>
-
-        <select 
-          disabled={!selectedCategory}
-          value={selectedTopic}
-          onChange={(e) => handleTopicChange(e.target.value)}
-          className="w-full px-3 py-2 bg-white/50 border-2 border-[#e6d5b8] rounded-xl text-xs font-bold focus:outline-none focus:border-[#8b5cf6] transition-all text-[#4a3f35] appearance-none cursor-pointer disabled:opacity-50"
-        >
-          <option value="">Select Topic...</option>
-          {selectedCategory && INTEREST_CATEGORIES[selectedCategory].map(topic => (
-            <option key={topic} value={topic}>{topic}</option>
-          ))}
-        </select>
+      {/* Topic Selection Area */}
+      <div className="relative min-h-[120px] flex flex-col">
+        <AnimatePresence mode="wait">
+          {selectedCategory ? (
+            <motion.div
+              key={selectedCategory}
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              className="space-y-3 flex-1"
+            >
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1 custom-scrollbar">
+                {INTEREST_CATEGORIES[selectedCategory].topics.map(topic => {
+                  const isSelected = interests.includes(`${selectedCategory}: ${topic}`);
+                  return (
+                    <button
+                      key={topic}
+                      onClick={() => handleTopicToggle(topic)}
+                      className={cn(
+                        "px-2.5 py-1.5 rounded-lg text-[9px] font-bold transition-all border shadow-sm",
+                        isSelected 
+                          ? "bg-brand-500 border-brand-600 text-white" 
+                          : "bg-white border-slate-100 text-slate-600 hover:border-brand-200"
+                      )}
+                    >
+                      {topic}
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="empty"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex-1 flex flex-col items-center justify-center text-center p-4 space-y-2"
+            >
+              <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-slate-300">
+                <MousePointer2 size={20} />
+              </div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-tight">
+                Select a category<br/>to find topics
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
+      {/* Selected Interests Summary */}
+      {interests.length > 0 && (
+        <div className="pt-3 border-t border-[#e6d5b8] flex flex-wrap gap-1.5">
+          {interests.slice(0, 4).map(interest => (
+            <span 
+              key={interest} 
+              className="flex items-center gap-1 px-2 py-1 bg-white border border-slate-100 rounded-lg text-[8px] font-bold text-slate-600 group transition-all"
+            >
+              {interest.split(': ')[1] || interest}
+              <button onClick={() => onUpdate(interests.filter(i => i !== interest))} className="text-slate-300 hover:text-rose-500">
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+          {interests.length > 4 && (
+            <span className="text-[8px] font-black text-brand-500 py-1">+{interests.length - 4} more</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

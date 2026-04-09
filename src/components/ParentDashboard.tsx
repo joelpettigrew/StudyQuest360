@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Settings as SettingsIcon, Shield, Clock, TrendingUp, Plus, Trash2, Gamepad2, LogOut, X, Calendar, Sparkles, Wand2, ExternalLink, Loader2, AlertTriangle } from 'lucide-react';
+import { Users, Settings as SettingsIcon, Shield, Clock, TrendingUp, Plus, Trash2, Gamepad2, LogOut, X, Calendar, Sparkles, Wand2, ExternalLink, Loader2, AlertTriangle, CheckCircle2, AlertCircle } from 'lucide-react';
 import { db, doc, onSnapshot, setDoc, updateDoc, collection, query, where, auth, signOut, getDoc, handleFirestoreError, OperationType, addDoc, serverTimestamp } from '../firebase';
 import { UserProfile, ParentSettings, Assignment, Priority } from '../types';
 import { cn } from '../lib/utils';
@@ -20,6 +20,7 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [studentIdInput, setStudentIdInput] = useState('');
   const [isLinking, setIsLinking] = useState(false);
+  const [linkStatus, setLinkStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [selectedStudentForQuest, setSelectedStudentForQuest] = useState<UserProfile | null>(null);
   const [isQuestModalOpen, setIsQuestModalOpen] = useState(false);
 
@@ -78,40 +79,47 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
   }, [user.uid]);
 
   const handleLinkStudent = async () => {
-    if (!studentIdInput || isLinking) return;
+    const trimmedId = studentIdInput.trim();
+    if (!trimmedId || isLinking) return;
+    
+    if (trimmedId === user.uid) {
+      setLinkStatus({ type: 'error', message: "You cannot link to your own account ID!" });
+      return;
+    }
+
     setIsLinking(true);
+    setLinkStatus(null);
     try {
       // Check if student exists
-      const studentDoc = await getDoc(doc(db, 'users', studentIdInput));
+      const studentDoc = await getDoc(doc(db, 'users', trimmedId));
       if (!studentDoc.exists()) {
-        alert("Student ID not found!");
+        setLinkStatus({ type: 'error', message: "Student ID not found! Please double-check the ID." });
         return;
       }
 
       const studentData = studentDoc.data() as UserProfile;
-      if (studentData.role !== 'student') {
-        alert("This ID does not belong to a student account.");
+      if (studentData.role === 'parent' || studentData.role === 'admin') {
+        setLinkStatus({ type: 'error', message: "This ID belongs to a parent or admin. You can only link to student accounts." });
         return;
       }
 
-      // Check if already linked
-      const q = query(collection(db, 'connections'), 
-        where('parentId', '==', user.uid), 
-        where('studentId', '==', studentIdInput)
-      );
-      const existing = await getDoc(doc(db, 'connections', `${user.uid}_${studentIdInput}`)); // Wait, I should use a deterministic ID or check query
-      // Let's just use addDoc and let the query handle it, or use a deterministic ID
-      await setDoc(doc(db, 'connections', `${user.uid}_${studentIdInput}`), {
+      // Create connection with deterministic ID
+      await setDoc(doc(db, 'connections', `${user.uid}_${trimmedId}`), {
         parentId: user.uid,
-        studentId: studentIdInput,
+        studentId: trimmedId,
         createdAt: new Date().toISOString()
       });
       
       setStudentIdInput('');
-      alert("Student linked successfully!");
-    } catch (error) {
+      setLinkStatus({ type: 'success', message: "Student linked successfully!" });
+      setTimeout(() => setLinkStatus(null), 5000);
+    } catch (error: any) {
       console.error("Error linking student:", error);
-      alert("Failed to link student.");
+      let msg = "Failed to link student. Please try again.";
+      if (error.message?.includes('permission-denied')) {
+        msg = "Permission denied. Make sure your profile is fully set up as a Parent.";
+      }
+      setLinkStatus({ type: 'error', message: msg });
     } finally {
       setIsLinking(false);
     }
@@ -151,15 +159,15 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
       const date = subDays(startOfDay(new Date()), i);
       
       const created = studentAssignments.filter(a => {
-        // Fallback: if createdAt is missing, use dueDate as a proxy for the creation period 
-        // (or just skip if we want strict accuracy, but fallback helps with existing data)
-        const createdDate = a.createdAt ? new Date(a.createdAt) : (a.dueDate ? new Date(a.dueDate) : null);
-        return createdDate && isSameDay(createdDate, date);
+        if (!a.createdAt) return false;
+        // Handle both Firestore Timestamp and ISO string
+        const createdDate = (a.createdAt as any).toDate ? (a.createdAt as any).toDate() : new Date(a.createdAt as any);
+        return isSameDay(createdDate, date);
       }).length;
 
       const completed = studentAssignments.filter(a => {
         if (!a.completedAt) return false;
-        const completedDate = new Date(a.completedAt);
+        const completedDate = (a.completedAt as any).toDate ? (a.completedAt as any).toDate() : new Date(a.completedAt as any);
         return isSameDay(completedDate, date);
       }).length;
 
@@ -223,22 +231,37 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
           <h3 className="text-xl font-black text-slate-900 mb-2">Link New Student</h3>
           <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Enter your student's unique ID to start monitoring their progress.</p>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <input 
-            type="text" 
-            placeholder="Enter Student ID..." 
-            className="flex-1 md:w-64 px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold focus:outline-none focus:border-brand-500 transition-all shadow-inner"
-            value={studentIdInput}
-            onChange={(e) => setStudentIdInput(e.target.value)}
-          />
-          <button 
-            onClick={handleLinkStudent}
-            disabled={isLinking}
-            className="px-8 py-4 bg-brand-500 text-white rounded-2xl font-bold hover:bg-brand-600 transition-all shadow-xl shadow-brand-100 flex items-center gap-2 disabled:opacity-50"
-          >
-            {isLinking ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
-            Link Student
-          </button>
+        <div className="flex flex-col gap-3 w-full md:w-auto">
+          <div className="flex items-center gap-3">
+            <input 
+              type="text" 
+              placeholder="Enter Student ID..." 
+              className="flex-1 md:w-64 px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold focus:outline-none focus:border-brand-500 transition-all shadow-inner"
+              value={studentIdInput}
+              onChange={(e) => setStudentIdInput(e.target.value)}
+            />
+            <button 
+              onClick={handleLinkStudent}
+              disabled={isLinking}
+              className="px-8 py-4 bg-brand-500 text-white rounded-2xl font-bold hover:bg-brand-600 transition-all shadow-xl shadow-brand-100 flex items-center gap-2 disabled:opacity-50"
+            >
+              {isLinking ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
+              Link Student
+            </button>
+          </div>
+          {linkStatus && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={cn(
+                "p-3 rounded-xl text-xs font-bold flex items-center gap-2",
+                linkStatus.type === 'success' ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-rose-50 text-rose-600 border border-rose-100"
+              )}
+            >
+              {linkStatus.type === 'success' ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+              {linkStatus.message}
+            </motion.div>
+          )}
         </div>
       </div>
 
@@ -255,7 +278,8 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                   </div>
                   <div>
                     <h4 className="font-bold text-slate-900">{student.displayName}</h4>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Level {student.level} • {student.xp} XP</p>
+                    <p className="text-[10px] font-mono font-bold text-brand-600 uppercase tracking-tight select-all cursor-pointer" title="Student Link ID - Click to select">ID: {student.uid}</p>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Level {student.level} • {student.xp} XP</p>
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -427,7 +451,6 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                         createdAt: serverTimestamp()
                       });
                       setIsQuestModalOpen(false);
-                      alert(`Quest "${assignmentData.title}" assigned to ${selectedStudentForQuest.displayName}!`);
                     } catch (error) {
                       handleFirestoreError(error, OperationType.WRITE, 'assignments');
                     }

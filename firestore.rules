@@ -184,7 +184,13 @@ service cloud.firestore {
 
     // Users Collection
     match /users/{userId} {
-      allow read: if isAuthenticated() && (isOwner(userId) || isParentOf(userId) || isAdmin() || (isParent() && resource.data.role == 'student'));
+      allow read: if isAuthenticated() && (
+        isOwner(userId) || 
+        isParentOf(userId) || 
+        isAdmin() || 
+        (isParent() && (resource.data.role == 'student' || resource.data.role == '')) ||
+        (getUserData(request.auth.uid).role == 'student' && (resource.data.role == 'parent' || resource.data.role == 'admin'))
+      );
       allow create: if isAuthenticated() && (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data, userId);
       allow update: if isAuthenticated() && (
         (isOwner(userId) && isValidUser(request.resource.data, userId) && 
