@@ -21,6 +21,7 @@ import {
   Trash2, 
   LayoutDashboard,
   BookOpen,
+  BrainCircuit,
   Settings,
   Search,
   X,
@@ -118,6 +119,7 @@ import {
 
 // Components
 import StudyAssist from './components/StudyAssist';
+import TrainingModule from './components/TrainingModule';
 import { ConceptMatchGame, GravityMatchGame, QuestRunGame } from './components/Game';
 import { TargetPracticeGame } from './components/TargetPractice';
 import LandingPage from './components/LandingPage';
@@ -148,6 +150,8 @@ function StudyQuestApp() {
   const [selectedTopic, setSelectedTopic] = useState<string>('');
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [isStudyAssistOpen, setIsStudyAssistOpen] = useState(false);
+  const [isTrainingOpen, setIsTrainingOpen] = useState(false);
+  const [trainingAssignment, setTrainingAssignment] = useState<Assignment | null>(null);
   const [scrolls, setScrolls] = useState<Scroll[]>([]);
   const [subjectFilter, setSubjectFilter] = useState<string>('all');
   const [viewingScroll, setViewingScroll] = useState<Scroll | null>(null);
@@ -162,6 +166,7 @@ function StudyQuestApp() {
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [allAssignments, setAllAssignments] = useState<Assignment[]>([]);
   const [allGameSessions, setAllGameSessions] = useState<GameSession[]>([]);
+  const [allConnections, setAllConnections] = useState<any[]>([]);
   const [connections, setConnections] = useState<any[]>([]);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
@@ -313,22 +318,37 @@ function StudyQuestApp() {
       handleFirestoreError(error, OperationType.GET, 'game_sessions');
     });
 
+    const unsubscribeConnections = onSnapshot(collection(db, 'connections'), (snapshot) => {
+      setAllConnections(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'connections');
+    });
+
     return () => {
       unsubscribeUsers();
       unsubscribeAssignments();
       unsubscribeGameSessions();
+      unsubscribeConnections();
     };
   }, [isAdminUser]);
 
   useEffect(() => {
-    if (!user?.parentId) return;
-    const unsubscribeSettings = onSnapshot(doc(db, 'settings', user.parentId), (doc) => {
+    let parentIdToUse = user?.parentId;
+    
+    // If student has connections, use the first parent's settings as primary
+    if (user?.role === 'student' && connections.length > 0) {
+      parentIdToUse = connections[0].parentId;
+    }
+
+    if (!parentIdToUse) return;
+    
+    const unsubscribeSettings = onSnapshot(doc(db, 'settings', parentIdToUse), (doc) => {
       if (doc.exists()) setParentSettings(doc.data() as ParentSettings);
     }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `settings/${user.parentId}`);
+      handleFirestoreError(error, OperationType.GET, `settings/${parentIdToUse}`);
     });
     return () => unsubscribeSettings();
-  }, [user?.parentId]);
+  }, [user?.parentId, user?.role, connections]);
 
   const handleLogin = async () => {
     if (isLoggingIn) return;
@@ -899,6 +919,7 @@ function StudyQuestApp() {
             users={allUsers} 
             assignments={allAssignments} 
             gameSessions={allGameSessions} 
+            connections={allConnections}
             onImpersonate={(u) => {
               setImpersonatedStudent(u);
               setAdminView(u.role === 'parent' ? 'parent' : 'student');
@@ -1030,7 +1051,51 @@ function StudyQuestApp() {
 
             <div className="relative font-serif">
               <AnimatePresence mode="wait">
-                {!isStudyAssistOpen ? (
+                {isTrainingOpen && trainingAssignment ? (
+                  <motion.div 
+                    key="training-module"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="relative h-[80vh]"
+                  >
+                    <TrainingModule 
+                      assignment={trainingAssignment}
+                      user={activeUser}
+                      onClose={() => {
+                        setIsTrainingOpen(false);
+                        setTrainingAssignment(null);
+                      }}
+                    />
+                  </motion.div>
+                ) : isStudyAssistOpen ? (
+                  <motion.div 
+                    key="study-assist"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="relative"
+                  >
+                    <button 
+                      onClick={() => {
+                        setIsStudyAssistOpen(false);
+                        setSelectedTopic('');
+                      }}
+                      className="absolute -top-6 -right-6 z-50 w-12 h-12 bg-white border-4 border-[#e6d5b8] text-[#4a3f35] rounded-full flex items-center justify-center shadow-xl hover:bg-rose-50 hover:text-rose-500 hover:border-rose-200 transition-all hover:scale-110 active:scale-95 group"
+                    >
+                      <X size={24} className="group-hover:rotate-90 transition-transform" />
+                    </button>
+                    <StudyAssist 
+                      topic={selectedTopic} 
+                      subject={selectedAssignment?.subject || ''}
+                      blockedTopics={parentSettings?.blockedTopics || []} 
+                      interests={activeUser.interests}
+                      grade={activeUser.grade}
+                      studentId={activeUser.uid}
+                      history={studyHistory}
+                    />
+                  </motion.div>
+                ) : (
                   <motion.div 
                     key="quest-board"
                     initial={{ opacity: 0, y: 20 }}
@@ -1106,6 +1171,10 @@ function StudyQuestApp() {
                                 setSelectedTopic(a.topic || a.title);
                                 setIsStudyAssistOpen(true);
                               }}
+                              onTraining={() => {
+                                setTrainingAssignment(a);
+                                setIsTrainingOpen(true);
+                              }}
                               onEdit={() => setEditingAssignment(a)}
                               isSelected={selectedAssignment?.id === a.id}
                             />
@@ -1122,33 +1191,6 @@ function StudyQuestApp() {
                         )}
                       </div>
                     </section>
-                  </motion.div>
-                ) : (
-                  <motion.div 
-                    key="study-assist"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className="relative"
-                  >
-                    <button 
-                      onClick={() => {
-                        setIsStudyAssistOpen(false);
-                        setSelectedTopic('');
-                      }}
-                      className="absolute -top-6 -right-6 z-50 w-12 h-12 bg-white border-4 border-[#e6d5b8] text-[#4a3f35] rounded-full flex items-center justify-center shadow-xl hover:bg-rose-50 hover:text-rose-500 hover:border-rose-200 transition-all hover:scale-110 active:scale-95 group"
-                    >
-                      <X size={24} className="group-hover:rotate-90 transition-transform" />
-                    </button>
-                    <StudyAssist 
-                      topic={selectedTopic} 
-                      subject={selectedAssignment?.subject || ''}
-                      blockedTopics={parentSettings?.blockedTopics || []} 
-                      interests={activeUser.interests}
-                      grade={activeUser.grade}
-                      studentId={activeUser.uid}
-                      history={studyHistory}
-                    />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1839,9 +1881,10 @@ const AssignmentRow: React.FC<{
   onDelete: () => void, 
   onSelect: () => void, 
   onStudy: () => void,
+  onTraining: () => void,
   onEdit: () => void, 
   isSelected?: boolean 
-}> = ({ assignment, onToggle, onDelete, onSelect, onStudy, onEdit, isSelected }) => {
+}> = ({ assignment, onToggle, onDelete, onSelect, onStudy, onTraining, onEdit, isSelected }) => {
   return (
     <div className={cn(
       "group p-6 flex items-center gap-6 transition-all hover:bg-white/50 cursor-pointer border-l-8", 
@@ -1869,7 +1912,7 @@ const AssignmentRow: React.FC<{
             <Calendar size={14} />
             {format(parseISO(assignment.dueDate), 'MMMM d, yyyy')}
           </div>
-          <span className="text-[10px] font-black text-[#8b5cf6] uppercase tracking-widest bg-[#8b5cf6]/10 px-3 py-1 rounded-full border border-[#8b5cf6]/20 font-sans">
+          <span className="text-[10px] font-black text-[#8b5cf6] uppercase tracking-widest bg-[#8b5cf6]/10 px-3 py-2 rounded-full border border-[#8b5cf6]/20 font-sans">
             {assignment.subject}
           </span>
           {assignment.topic && (
@@ -1895,13 +1938,22 @@ const AssignmentRow: React.FC<{
         </h5>
       </div>
       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button 
-          onClick={(e) => { e.stopPropagation(); onStudy(); }} 
-          className="flex items-center gap-2 px-4 py-2 bg-[#8b5cf6] text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-[#7c3aed] transition-all shadow-md border-2 border-[#7c3aed]"
-        >
-          <Wand2 size={16} />
-          Study
-        </button>
+        <div className="flex flex-col gap-2">
+          <button 
+            onClick={(e) => { e.stopPropagation(); onStudy(); }} 
+            className="flex items-center gap-2 px-4 py-2 bg-[#8b5cf6] text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-[#7c3aed] transition-all shadow-md border-2 border-[#7c3aed]"
+          >
+            <Wand2 size={16} />
+            Study
+          </button>
+          <button 
+            onClick={(e) => { e.stopPropagation(); onTraining(); }} 
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-md border-2 border-emerald-600"
+          >
+            <BrainCircuit size={16} />
+            Training
+          </button>
+        </div>
         <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-3 bg-white text-[#b8a992] hover:text-[#8b5cf6] rounded-xl border border-[#e6d5b8] shadow-sm transition-all hover:scale-110">
           <Settings size={20} />
         </button>

@@ -15,6 +15,7 @@ export interface UserProfile {
   tries: number;
   grade?: string;
   lastCompletedDate: string | null;
+  lastScrollCreatedAt?: string | null;
   interests?: string[];
   highScores?: Record<string, number>;
   assignmentsAddedCount?: number;

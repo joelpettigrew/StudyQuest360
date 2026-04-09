@@ -88,6 +88,12 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
         return;
       }
 
+      const studentData = studentDoc.data() as UserProfile;
+      if (studentData.role !== 'student') {
+        alert("This ID does not belong to a student account.");
+        return;
+      }
+
       // Check if already linked
       const q = query(collection(db, 'connections'), 
         where('parentId', '==', user.uid), 

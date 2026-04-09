@@ -6,10 +6,16 @@ import { AnswerBank } from "../types";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 export async function generateAnswerBank(assignmentId: string | null, studentId: string, topic: string, subject: string, grade: string = '9th Grade') {
-  console.log(`Starting Answer Bank generation for ${topic} (${subject}) - Student: ${studentId}`);
+  console.log(`[AnswerBankService] Starting generation for ${topic} (${subject}) - Student: ${studentId}`);
   try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error("[AnswerBankService] GEMINI_API_KEY is missing!");
+      return;
+    }
+
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash",
       contents: `You are the AI engine for StudyQuest360 (Project: studyquest360-979db). 
       Create an educational answer bank for a ${grade} student studying ${subject}: ${topic}.
       
@@ -62,7 +68,14 @@ export async function generateAnswerBank(assignmentId: string | null, studentId:
       }
     });
 
-    const data = JSON.parse(response.text || '{}');
+    const text = response.text;
+    if (!text) {
+      console.error("[AnswerBankService] Empty response from AI");
+      return;
+    }
+
+    console.log("[AnswerBankService] AI Response received, parsing...");
+    const data = JSON.parse(text);
     
     // Add status to concepts
     const conceptsWithStatus = (data.concepts || []).map((c: any) => ({
@@ -81,7 +94,8 @@ export async function generateAnswerBank(assignmentId: string | null, studentId:
       createdAt: new Date().toISOString()
     };
 
-    await addDoc(collection(db, 'answer_banks'), answerBankData);
+    const docRef = await addDoc(collection(db, 'answer_banks'), answerBankData);
+    console.log(`[AnswerBankService] Successfully saved answer bank with ID: ${docRef.id}`);
 
     // Cleanup old answer banks (keep only latest 15)
     const q = query(

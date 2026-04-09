@@ -9,10 +9,11 @@ interface AdminDashboardProps {
   users: UserProfile[];
   assignments: Assignment[];
   gameSessions: GameSession[];
+  connections: any[];
   onImpersonate: (user: UserProfile) => void;
 }
 
-export default function AdminDashboard({ users, assignments, gameSessions, onImpersonate }: AdminDashboardProps) {
+export default function AdminDashboard({ users, assignments, gameSessions, connections, onImpersonate }: AdminDashboardProps) {
   const [searchQuery, setSearchQuery] = React.useState('');
 
   const stats = useMemo(() => {
@@ -36,9 +37,10 @@ export default function AdminDashboard({ users, assignments, gameSessions, onImp
 
   const getStudentQuests = (studentId: string) => assignments.filter(a => a.studentId === studentId).length;
   const getStudentGames = (studentId: string) => gameSessions.filter(s => s.studentId === studentId).length;
-  const getParentName = (parentId?: string) => {
-    if (!parentId) return 'None';
-    return users.find(u => u.uid === parentId)?.displayName || 'Unknown';
+  const getParentNames = (studentId: string) => {
+    const parentIds = connections.filter(c => c.studentId === studentId).map(c => c.parentId);
+    if (parentIds.length === 0) return 'None';
+    return parentIds.map(pid => users.find(u => u.uid === pid)?.displayName || 'Unknown').join(', ');
   };
 
   return (
@@ -122,8 +124,13 @@ export default function AdminDashboard({ users, assignments, gameSessions, onImp
                     <div className="text-sm font-medium text-slate-600">
                       {user.role === 'student' ? (
                         <div className="flex flex-col">
-                          <span className="text-[10px] text-slate-400 uppercase font-black">Parent</span>
-                          {getParentName(user.parentId)}
+                          <span className="text-[10px] text-slate-400 uppercase font-black">Parents</span>
+                          {getParentNames(user.uid)}
+                        </div>
+                      ) : user.role === 'parent' ? (
+                        <div className="flex flex-col">
+                          <span className="text-[10px] text-slate-400 uppercase font-black">Linked Kids</span>
+                          {connections.filter(c => c.parentId === user.uid).length}
                         </div>
                       ) : 'N/A'}
                     </div>

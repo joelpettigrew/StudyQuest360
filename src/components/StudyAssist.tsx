@@ -3,7 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { BookOpen, Search, Sparkles, Loader2, ExternalLink, ChevronRight, X, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from '../firebase';
-import { collection, addDoc, serverTimestamp, query, where, orderBy, getDocs, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, orderBy, getDocs, deleteDoc, updateDoc, doc } from 'firebase/firestore';
 import { cn } from '../lib/utils';
 
 interface StudyAssistProps {
@@ -76,6 +76,32 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
 
       const ai = new GoogleGenAI({ apiKey });
       
+      // Check daily limit for scroll creation (Mountain Time)
+      const now = new Date();
+      const mtDate = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Denver',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(now);
+
+      const userDoc = await getDocs(query(collection(db, 'users'), where('uid', '==', studentId)));
+      if (!userDoc.empty) {
+        const userData = userDoc.docs[0].data();
+        if (userData.lastScrollCreatedAt) {
+          const lastDate = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Denver',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+          }).format(new Date(userData.lastScrollCreatedAt));
+
+          if (lastDate === mtDate) {
+            throw new Error("You have already created a scroll today! Your limit resets at midnight Mountain Time.");
+          }
+        }
+      }
+
       const prompt = `You are the AI engine for StudyQuest360 (Project: studyquest360-979db).
       Create an educational scroll about "${topic}". 
       Context: ${data.explanation}. 
@@ -87,7 +113,7 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
 
       console.log("StudyAssist: Generating scroll for topic:", topic);
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
+        model: "gemini-2.0-flash-image",
         contents: prompt,
         config: {
           imageConfig: {
@@ -121,6 +147,13 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
         studentId: uid,
         createdAt: serverTimestamp()
       });
+
+      // Update user's last scroll creation date
+      if (uid) {
+        await updateDoc(doc(db, 'users', uid), {
+          lastScrollCreatedAt: new Date().toISOString()
+        });
+      }
 
       // Cleanup: Keep only last 3
       if (uid) {
