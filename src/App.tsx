@@ -558,9 +558,19 @@ function StudyQuestApp() {
     }
   };
 
-  const isSchoolHours = useMemo(() => {
+  const isLockedOut = useMemo(() => {
     if (!parentSettings) return false;
     const now = new Date();
+    const currentDay = now.getDay(); // 0 is Sunday, 6 is Saturday
+    const daysType = parentSettings.blockedDaysType || 'all';
+
+    // Check if current day is a blocked day
+    if (daysType === 'weekdays') {
+      if (currentDay === 0 || currentDay === 6) return false; // Weekend, not blocked
+    } else if (daysType === 'weekends') {
+      if (currentDay >= 1 && currentDay <= 5) return false; // Weekday, not blocked
+    }
+
     const current = now.getHours() * 60 + now.getMinutes();
     const [startH, startM] = parentSettings.schoolHoursStart.split(':').map(Number);
     const [endH, endM] = parentSettings.schoolHoursEnd.split(':').map(Number);
@@ -953,9 +963,9 @@ function StudyQuestApp() {
               user={activeUser}
               assignments={assignments}
               answerBanks={answerBanks}
-              isSchoolHours={isSchoolHours}
-              sessions={gameSessions}
+              isLockedOut={isLockedOut}
               parentSettings={parentSettings}
+              sessions={gameSessions}
               onTryUsed={() => updateDoc(doc(db, 'users', activeUser.uid), { tries: activeUser.tries - 1 })}
               onScore={(gameId, score) => {
                 const currentHighScore = activeUser.highScores?.[gameId] || 0;
@@ -1353,7 +1363,7 @@ function StudyQuestApp() {
   );
 }
 
-function GameZone({ user, assignments, answerBanks, isSchoolHours, onTryUsed, onScore, sessions = [], parentSettings }: { user: UserProfile, assignments: Assignment[], answerBanks: AnswerBank[], isSchoolHours: boolean, onTryUsed: () => void, onScore: (gameId: string, score: number) => void, sessions?: any[], parentSettings: ParentSettings | null }) {
+function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onScore, sessions = [], parentSettings }: { user: UserProfile, assignments: Assignment[], answerBanks: AnswerBank[], isLockedOut: boolean, onTryUsed: () => void, onScore: (gameId: string, score: number) => void, sessions?: any[], parentSettings: ParentSettings | null }) {
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1403,7 +1413,8 @@ function GameZone({ user, assignments, answerBanks, isSchoolHours, onTryUsed, on
         </button>
         <QuestRunGame 
           tries={user.tries} 
-          isSchoolHours={isSchoolHours}
+          isLockedOut={isLockedOut}
+          parentSettings={parentSettings}
           onTryUsed={onTryUsed}
           onScore={(score) => onScore('questrun', score)}
           assignments={assignments}
@@ -1422,7 +1433,8 @@ function GameZone({ user, assignments, answerBanks, isSchoolHours, onTryUsed, on
         </button>
         <TargetPracticeGame 
           tries={user.tries} 
-          isSchoolHours={isSchoolHours}
+          isLockedOut={isLockedOut}
+          parentSettings={parentSettings}
           onTryUsed={onTryUsed}
           onScore={(score) => onScore('target-practice', score)}
           assignments={assignments}
@@ -1441,7 +1453,8 @@ function GameZone({ user, assignments, answerBanks, isSchoolHours, onTryUsed, on
         </button>
         <ConceptMatchGame 
           tries={user.tries} 
-          isSchoolHours={isSchoolHours}
+          isLockedOut={isLockedOut}
+          parentSettings={parentSettings}
           onTryUsed={onTryUsed}
           onScore={(score) => onScore('concept-match', score)}
           grade={user.grade}
@@ -1461,7 +1474,8 @@ function GameZone({ user, assignments, answerBanks, isSchoolHours, onTryUsed, on
         </button>
         <GravityMatchGame 
           tries={user.tries} 
-          isSchoolHours={isSchoolHours}
+          isLockedOut={isLockedOut}
+          parentSettings={parentSettings}
           assignments={assignments}
           answerBanks={answerBanks}
           onTryUsed={onTryUsed}

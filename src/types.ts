@@ -79,6 +79,7 @@ export interface ParentSettings {
   schoolHoursEnd: string;
   blockedTopics: string[];
   activeGameId?: string;
+  blockedDaysType?: 'weekdays' | 'weekends' | 'all';
 }
 
 export interface AnswerBank {

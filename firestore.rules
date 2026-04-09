@@ -144,7 +144,8 @@ service cloud.firestore {
              data.parentId == request.auth.uid &&
              (!('schoolHoursStart' in data) || isValidTime(data.schoolHoursStart)) &&
              (!('schoolHoursEnd' in data) || isValidTime(data.schoolHoursEnd)) &&
-             (!('blockedTopics' in data) || (data.blockedTopics is list));
+             (!('blockedTopics' in data) || (data.blockedTopics is list)) &&
+             (!('blockedDaysType' in data) || (data.blockedDaysType in ['weekdays', 'weekends', 'all']));
     }
 
     function isValidScroll(data) {

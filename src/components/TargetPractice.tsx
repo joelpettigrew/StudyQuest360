@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Heart, Timer, Target as TargetIcon, ArrowLeft, Sparkles, Zap } from 'lucide-react';
+import { Trophy, Heart, Timer, Target as TargetIcon, ArrowLeft, Sparkles, Zap, Lock } from 'lucide-react';
 import { Assignment, AnswerBank, UserProfile } from '../types';
 
 interface TargetPracticeProps {
   tries: number;
   onTryUsed: () => void;
   onScore: (score: number) => void;
-  isSchoolHours: boolean;
+  isLockedOut: boolean;
+  parentSettings: any;
   assignments: Assignment[];
   answerBanks: AnswerBank[];
   user: UserProfile;
@@ -33,7 +34,7 @@ interface Question {
 
 const TARGET_COLORS = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
 
-export function TargetPracticeGame({ tries, onTryUsed, onScore, isSchoolHours, assignments, answerBanks, user }: TargetPracticeProps) {
+export function TargetPracticeGame({ tries, onTryUsed, onScore, isLockedOut, parentSettings, assignments, answerBanks, user }: TargetPracticeProps) {
   const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover'>('start');
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [targets, setTargets] = useState<GameTarget[]>([]);
@@ -170,7 +171,7 @@ export function TargetPracticeGame({ tries, onTryUsed, onScore, isSchoolHours, a
   }, [gameState, updatePhysics]);
 
   const startGame = () => {
-    if (tries <= 0 && !isSchoolHours) return;
+    if (tries <= 0 && !isLockedOut) return;
     onTryUsed();
     setScore(0);
     setStreak(0);
@@ -228,7 +229,26 @@ export function TargetPracticeGame({ tries, onTryUsed, onScore, isSchoolHours, a
       </div>
 
       <div ref={containerRef} className="w-full h-full relative">
-        {gameState === 'start' && (
+        {isLockedOut ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center z-30 bg-[#fdf6e3]/80 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="text-center space-y-8"
+            >
+              <div className="w-32 h-32 bg-white border-4 border-[#e6d5b8] rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl">
+                <Lock className="text-[#8c7b68]" size={64} />
+              </div>
+              <div>
+                <h2 className="text-5xl font-black text-[#4a3f35] uppercase tracking-tighter mb-2">Arena Locked</h2>
+                <p className="text-[#8c7b68] font-bold max-w-sm mx-auto">
+                  Your parent has locked games between {parentSettings?.schoolHoursStart} and {parentSettings?.schoolHoursEnd} 
+                  {parentSettings?.blockedDaysType === 'weekdays' ? ' on weekdays' : parentSettings?.blockedDaysType === 'weekends' ? ' on weekends' : ''}.
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        ) : gameState === 'start' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center z-30 bg-[#fdf6e3]/80 backdrop-blur-sm">
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
@@ -244,13 +264,13 @@ export function TargetPracticeGame({ tries, onTryUsed, onScore, isSchoolHours, a
               </div>
               <button 
                 onClick={startGame}
-                disabled={tries <= 0 && !isSchoolHours}
+                disabled={tries <= 0 && !isLockedOut}
                 className="group relative px-12 py-6 bg-[#ef4444] text-white rounded-[2rem] font-black text-2xl shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
               >
                 <span className="relative z-10">START QUEST</span>
                 <div className="absolute inset-0 bg-white/20 rounded-[2rem] scale-x-0 group-hover:scale-x-100 transition-transform origin-left" />
               </button>
-              {tries <= 0 && !isSchoolHours && (
+              {tries <= 0 && !isLockedOut && (
                 <p className="text-rose-500 font-bold animate-bounce">Out of Quest Keys! Wait for school hours or a refill.</p>
               )}
             </motion.div>

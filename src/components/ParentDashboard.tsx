@@ -138,8 +138,13 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
     }
   };
 
-  const updateHours = (start: string, end: string) => {
-    updateDoc(doc(db, 'settings', user.uid), { schoolHoursStart: start, schoolHoursEnd: end });
+  const updateHours = (start: string, end: string, daysType?: 'weekdays' | 'weekends' | 'all') => {
+    if (!settings) return;
+    updateDoc(doc(db, 'settings', user.uid), { 
+      schoolHoursStart: start, 
+      schoolHoursEnd: end,
+      blockedDaysType: daysType || settings.blockedDaysType || 'all'
+    });
   };
 
   const addBlockedTopic = () => {
@@ -224,27 +229,44 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                 <span className="font-black uppercase tracking-widest text-[10px]">Your Parent ID</span>
               </div>
               <p className="text-sm font-mono font-bold text-brand-900 select-all cursor-pointer" title="Click to select">{user.uid}</p>
-              <button 
-                onClick={async () => {
-                  try {
-                    const testRef = doc(db, 'connections', `test_${user.uid}`);
-                    // Use a valid connection schema for the test
-                    await setDoc(testRef, { 
-                      parentId: user.uid, 
-                      studentId: 'test_id', 
-                      createdAt: new Date().toISOString() 
-                    });
-                    alert(`Write test successful!\n\nUID: ${user.uid}\nRole: ${user.role}\nEmail: ${user.email}`);
-                    await deleteDoc(testRef);
-                  } catch (e: any) {
-                    console.error("Test write failed:", e);
-                    alert(`Write test failed: ${e.message}\n\nThis usually means your account role isn't being recognized by the database yet.`);
-                  }
-                }}
-                className="mt-2 text-[8px] font-black text-brand-400 uppercase tracking-widest hover:text-brand-600 transition-colors"
-              >
-                Run Permission Test
-              </button>
+              <div className="flex flex-col gap-2">
+                <button 
+                  onClick={async () => {
+                    try {
+                      const testRef = doc(db, 'connections', `test_${user.uid}`);
+                      // Use a valid connection schema for the test
+                      await setDoc(testRef, { 
+                        parentId: user.uid, 
+                        studentId: 'test_id', 
+                        createdAt: new Date().toISOString() 
+                      });
+                      alert(`Write test successful!\n\nUID: ${user.uid}\nRole: ${user.role}\nEmail: ${user.email}`);
+                      await deleteDoc(testRef);
+                    } catch (e: any) {
+                      console.error("Test write failed:", e);
+                      alert(`Write test failed: ${e.message}\n\nThis usually means your account role isn't being recognized by the database yet.`);
+                    }
+                  }}
+                  className="text-[8px] font-black text-brand-400 uppercase tracking-widest hover:text-brand-600 transition-colors text-left"
+                >
+                  Run Permission Test
+                </button>
+                <button 
+                  onClick={async () => {
+                    if (window.confirm("This will reset your account role and take you back to the onboarding screen. Your data will remain, but you'll need to re-select 'Parent'. Continue?")) {
+                      try {
+                        await updateDoc(doc(db, 'users', user.uid), { role: '' });
+                        window.location.reload();
+                      } catch (e: any) {
+                        alert(`Reset failed: ${e.message}`);
+                      }
+                    }
+                  }}
+                  className="text-[8px] font-black text-rose-400 uppercase tracking-widest hover:text-rose-600 transition-colors text-left"
+                >
+                  Reset Account Role
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -422,10 +444,35 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
         <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><SettingsIcon size={24} className="text-slate-500" />Controls</h3>
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-8">
           <div>
-            <div className="flex items-center gap-2 mb-4"><Clock size={18} className="text-brand-500" /><h4 className="text-sm font-bold text-slate-900">School Hours (Game Locked)</h4></div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Start</label><input type="time" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold" value={settings?.schoolHoursStart || '08:00'} onChange={(e) => updateHours(e.target.value, settings?.schoolHoursEnd || '15:00')} /></div>
-              <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">End</label><input type="time" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold" value={settings?.schoolHoursEnd || '15:00'} onChange={(e) => updateHours(settings?.schoolHoursStart || '08:00', e.target.value)} /></div>
+            <div className="flex items-center gap-2 mb-4"><Clock size={18} className="text-brand-500" /><h4 className="text-sm font-bold text-slate-900">Game Lockout Schedule</h4></div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Start Time</label><input type="time" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold" value={settings?.schoolHoursStart || '08:00'} onChange={(e) => updateHours(e.target.value, settings?.schoolHoursEnd || '15:00')} /></div>
+                <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">End Time</label><input type="time" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold" value={settings?.schoolHoursEnd || '15:00'} onChange={(e) => updateHours(settings?.schoolHoursStart || '08:00', e.target.value)} /></div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Active Days</label>
+                <div className="flex gap-2">
+                  {[
+                    { id: 'all', label: 'Every Day' },
+                    { id: 'weekdays', label: 'Weekdays' },
+                    { id: 'weekends', label: 'Weekends' }
+                  ].map((type) => (
+                    <button
+                      key={type.id}
+                      onClick={() => updateHours(settings?.schoolHoursStart || '08:00', settings?.schoolHoursEnd || '15:00', type.id as any)}
+                      className={cn(
+                        "flex-1 py-2 px-3 rounded-xl text-xs font-bold border-2 transition-all",
+                        (settings?.blockedDaysType || 'all') === type.id
+                          ? "border-brand-500 bg-brand-50 text-brand-700"
+                          : "border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200"
+                      )}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
           <div>

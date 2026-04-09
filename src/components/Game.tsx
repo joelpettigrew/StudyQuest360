@@ -12,7 +12,8 @@ export interface GameProps {
   tries: number;
   onTryUsed: () => void;
   onScore: (score: number) => void;
-  isSchoolHours: boolean;
+  isLockedOut: boolean;
+  parentSettings: any;
   grade?: string;
   assignments: Assignment[];
   answerBanks?: AnswerBank[];
@@ -79,7 +80,7 @@ const getGameConcepts = async (assignments: Assignment[], grade?: string) => {
   }
 };
 
-export function ConceptMatchGame({ tries, onTryUsed, onScore, isSchoolHours, grade, assignments, answerBanks, user }: GameProps) {
+export function ConceptMatchGame({ tries, onTryUsed, onScore, isLockedOut, parentSettings, grade, assignments, answerBanks, user }: GameProps) {
   const [gameState, setGameState] = useState<'idle' | 'loading' | 'playing' | 'gameover'>('idle');
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [selectedTiles, setSelectedTiles] = useState<Tile[]>([]);
@@ -144,7 +145,7 @@ export function ConceptMatchGame({ tries, onTryUsed, onScore, isSchoolHours, gra
   }, [assignments, answerBanks, grade]);
 
   const startGame = () => {
-    if (tries <= 0 || isSchoolHours) return;
+    if (tries <= 0 || isLockedOut) return;
     onTryUsed();
     setScore(0);
     generateTiles();
@@ -242,13 +243,16 @@ export function ConceptMatchGame({ tries, onTryUsed, onScore, isSchoolHours, gra
         </div>
       </div>
 
-      {isSchoolHours ? (
+      {isLockedOut ? (
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center p-8">
           <div className="w-20 h-20 bg-white border-4 border-[#e6d5b8] rounded-3xl flex items-center justify-center mb-6 text-[#8c7b68]">
             <Lock size={40} />
           </div>
-          <h4 className="text-2xl font-black mb-2 uppercase tracking-widest">School Mode Active</h4>
-          <p className="text-[#8c7b68] max-w-xs font-sans font-medium">The arena is locked during school hours. Focus on your studies to earn more keys for later!</p>
+          <h4 className="text-2xl font-black mb-2 uppercase tracking-widest">Arena Locked</h4>
+          <p className="text-[#8c7b68] max-w-xs font-sans font-medium">
+            Your parent has locked games between {parentSettings?.schoolHoursStart} and {parentSettings?.schoolHoursEnd} 
+            {parentSettings?.blockedDaysType === 'weekdays' ? ' on weekdays' : parentSettings?.blockedDaysType === 'weekends' ? ' on weekends' : ''}.
+          </p>
         </div>
       ) : gameState === 'idle' ? (
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center p-8">
@@ -322,7 +326,7 @@ export function ConceptMatchGame({ tries, onTryUsed, onScore, isSchoolHours, gra
   );
 }
 
-export function GravityMatchGame({ tries, onTryUsed, onScore, isSchoolHours, assignments, answerBanks, grade, user }: GameProps) {
+export function GravityMatchGame({ tries, onTryUsed, onScore, isLockedOut, parentSettings, assignments, answerBanks, grade, user }: GameProps) {
   const [gameState, setGameState] = useState<'idle' | 'loading' | 'playing' | 'gameover'>('idle');
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(60);
@@ -336,7 +340,7 @@ export function GravityMatchGame({ tries, onTryUsed, onScore, isSchoolHours, ass
   const bodiesRef = useRef<Map<string, { body: Matter.Body, data: Tile }>>(new Map());
 
   const startGame = async () => {
-    if (tries <= 0 || isSchoolHours) return;
+    if (tries <= 0 || isLockedOut) return;
     onTryUsed();
     setGameState('loading');
     setScore(0);
@@ -641,13 +645,16 @@ export function GravityMatchGame({ tries, onTryUsed, onScore, isSchoolHours, ass
         </div>
       </div>
 
-      {isSchoolHours ? (
+      {isLockedOut ? (
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center p-8">
           <div className="w-20 h-20 bg-white border-4 border-[#e6d5b8] rounded-3xl flex items-center justify-center mb-6 text-[#8c7b68]">
             <Lock size={40} />
           </div>
-          <h4 className="text-2xl font-black mb-2 uppercase tracking-widest">School Mode Active</h4>
-          <p className="text-[#8c7b68] max-w-xs font-sans font-medium">The arena is locked during school hours. Focus on your studies to earn more keys for later!</p>
+          <h4 className="text-2xl font-black mb-2 uppercase tracking-widest">Arena Locked</h4>
+          <p className="text-[#8c7b68] max-w-xs font-sans font-medium">
+            Your parent has locked games between {parentSettings?.schoolHoursStart} and {parentSettings?.schoolHoursEnd} 
+            {parentSettings?.blockedDaysType === 'weekdays' ? ' on weekdays' : parentSettings?.blockedDaysType === 'weekends' ? ' on weekends' : ''}.
+          </p>
         </div>
       ) : gameState === 'idle' ? (
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center p-8">
@@ -730,7 +737,7 @@ export function GravityMatchGame({ tries, onTryUsed, onScore, isSchoolHours, ass
   );
 }
 
-export function QuestRunGame({ tries, onTryUsed, onScore, isSchoolHours, assignments, answerBanks, user }: GameProps) {
+export function QuestRunGame({ tries, onTryUsed, onScore, isLockedOut, parentSettings, assignments, answerBanks, user }: GameProps) {
   const [gameState, setGameState] = useState<'idle' | 'loading' | 'playing' | 'gameover'>('idle');
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
@@ -790,7 +797,7 @@ export function QuestRunGame({ tries, onTryUsed, onScore, isSchoolHours, assignm
   }, [answerBanks]);
 
   const startGame = () => {
-    if (tries <= 0 || isSchoolHours) return;
+    if (tries <= 0 || isLockedOut) return;
     onTryUsed();
     setGameState('loading');
     setScore(0);
@@ -1100,7 +1107,18 @@ export function QuestRunGame({ tries, onTryUsed, onScore, isSchoolHours, assignm
         </div>
       </div>
 
-      {gameState === 'idle' ? (
+      {isLockedOut ? (
+        <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center p-8">
+          <div className="w-20 h-20 bg-white border-4 border-[#e6d5b8] rounded-3xl flex items-center justify-center mb-6 text-[#8c7b68]">
+            <Lock size={40} />
+          </div>
+          <h4 className="text-2xl font-black mb-2 uppercase tracking-widest">Arena Locked</h4>
+          <p className="text-[#8c7b68] max-w-xs font-sans font-medium">
+            Your parent has locked games between {parentSettings?.schoolHoursStart} and {parentSettings?.schoolHoursEnd} 
+            {parentSettings?.blockedDaysType === 'weekdays' ? ' on weekdays' : parentSettings?.blockedDaysType === 'weekends' ? ' on weekends' : ''}.
+          </p>
+        </div>
+      ) : gameState === 'idle' ? (
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center p-8">
           <div className="flex gap-4 mb-8">
             <button 
