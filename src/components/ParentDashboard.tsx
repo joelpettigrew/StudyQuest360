@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Settings as SettingsIcon, Shield, Clock, TrendingUp, Plus, Trash2, Gamepad2, LogOut, X, Calendar, Sparkles, Wand2, ExternalLink, Loader2, AlertTriangle, CheckCircle2, AlertCircle } from 'lucide-react';
-import { db, doc, onSnapshot, setDoc, updateDoc, collection, query, where, auth, signOut, getDoc, handleFirestoreError, OperationType, addDoc, serverTimestamp } from '../firebase';
+import { db, doc, onSnapshot, setDoc, updateDoc, collection, query, where, auth, signOut, getDoc, handleFirestoreError, OperationType, addDoc, serverTimestamp, deleteDoc } from '../firebase';
 import { UserProfile, ParentSettings, Assignment, Priority } from '../types';
 import { cn } from '../lib/utils';
 import { format, subDays, isSameDay, startOfDay } from 'date-fns';
@@ -90,6 +90,12 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
     setIsLinking(true);
     setLinkStatus(null);
     try {
+      // Check if current user is actually a parent in the DB
+      if (user.role !== 'parent' && user.role !== 'admin') {
+        setLinkStatus({ type: 'error', message: "Your account is not set up as a Parent. Please reset your role and select 'Parent' first." });
+        return;
+      }
+
       // Check if student exists
       const studentDoc = await getDoc(doc(db, 'users', trimmedId));
       if (!studentDoc.exists()) {
@@ -116,9 +122,16 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
     } catch (error: any) {
       console.error("Error linking student:", error);
       let msg = "Failed to link student. Please try again.";
-      if (error.message?.includes('permission-denied')) {
-        msg = "Permission denied. Make sure your profile is fully set up as a Parent.";
+      
+      // Provide more specific feedback for debugging
+      if (error.code === 'permission-denied' || error.message?.includes('permission-denied')) {
+        msg = "Permission denied by database. Please ensure you have selected the 'Parent' role in your profile.";
+      } else if (error.code === 'unavailable') {
+        msg = "Network error. Please check your connection and try again.";
+      } else if (error.message) {
+        msg = `Error: ${error.message}`;
       }
+      
       setLinkStatus({ type: 'error', message: msg });
     } finally {
       setIsLinking(false);
@@ -211,6 +224,21 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                 <span className="font-black uppercase tracking-widest text-[10px]">Your Parent ID</span>
               </div>
               <p className="text-sm font-mono font-bold text-brand-900 select-all cursor-pointer" title="Click to select">{user.uid}</p>
+              <button 
+                onClick={async () => {
+                  try {
+                    const testRef = doc(db, 'connections', `test_${user.uid}`);
+                    await setDoc(testRef, { test: true, time: new Date().toISOString() });
+                    alert("Write test successful! Your account has database permissions.");
+                    await deleteDoc(testRef);
+                  } catch (e: any) {
+                    alert(`Write test failed: ${e.message}`);
+                  }
+                }}
+                className="mt-2 text-[8px] font-black text-brand-400 uppercase tracking-widest hover:text-brand-600 transition-colors"
+              >
+                Run Permission Test
+              </button>
             </div>
           </div>
         </div>
