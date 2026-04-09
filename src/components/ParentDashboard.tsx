@@ -228,11 +228,17 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                 onClick={async () => {
                   try {
                     const testRef = doc(db, 'connections', `test_${user.uid}`);
-                    await setDoc(testRef, { test: true, time: new Date().toISOString() });
-                    alert("Write test successful! Your account has database permissions.");
+                    // Use a valid connection schema for the test
+                    await setDoc(testRef, { 
+                      parentId: user.uid, 
+                      studentId: 'test_id', 
+                      createdAt: new Date().toISOString() 
+                    });
+                    alert(`Write test successful!\n\nUID: ${user.uid}\nRole: ${user.role}\nEmail: ${user.email}`);
                     await deleteDoc(testRef);
                   } catch (e: any) {
-                    alert(`Write test failed: ${e.message}`);
+                    console.error("Test write failed:", e);
+                    alert(`Write test failed: ${e.message}\n\nThis usually means your account role isn't being recognized by the database yet.`);
                   }
                 }}
                 className="mt-2 text-[8px] font-black text-brand-400 uppercase tracking-widest hover:text-brand-600 transition-colors"

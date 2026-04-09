@@ -188,6 +188,7 @@ service cloud.firestore {
         isOwner(userId) || 
         isParentOf(userId) || 
         isAdmin() || 
+        !exists(/databases/$(database)/documents/users/$(userId)) ||
         (isParent() && (resource.data.role == 'student' || resource.data.role == '')) ||
         (getUserData(request.auth.uid).role == 'student' && (resource.data.role == 'parent' || resource.data.role == 'admin'))
       );
@@ -210,6 +211,11 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidConnection(request.resource.data) && (
         request.auth.uid == request.resource.data.studentId || 
         request.auth.uid == request.resource.data.parentId ||
+        isAdmin()
+      );
+      allow update: if isAuthenticated() && isValidConnection(request.resource.data) && (
+        request.auth.uid == resource.data.studentId || 
+        request.auth.uid == resource.data.parentId ||
         isAdmin()
       );
       allow delete: if isAuthenticated() && (
