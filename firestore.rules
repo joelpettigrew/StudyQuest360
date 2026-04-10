@@ -179,6 +179,21 @@ service cloud.firestore {
              data.createdAt is string;
     }
 
+    function isValidTrial(data) {
+      return data.keys().hasAll(['studentId', 'subject', 'topics', 'dueDate']) &&
+             data.studentId is string &&
+             data.subject is string &&
+             data.topics is list &&
+             data.dueDate is string;
+    }
+
+    function isValidGlobalTopic(data) {
+      return data.keys().hasAll(['subject', 'topic', 'grade']) &&
+             data.subject is string &&
+             data.topic is string &&
+             data.grade is string;
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
@@ -189,9 +204,15 @@ service cloud.firestore {
         isOwner(userId) || 
         isParentOf(userId) || 
         isAdmin() || 
-        !exists(/databases/$(database)/documents/users/$(userId)) ||
-        (isParent() && (resource.data.role == 'student' || resource.data.role == '')) ||
-        (getUserData(request.auth.uid).role == 'student' && (resource.data.role == 'parent' || resource.data.role == 'admin'))
+        // Allow parents to look up students by ID for linking
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent' &&
+         (!exists(/databases/$(database)/documents/users/$(userId)) || 
+          get(/databases/$(database)/documents/users/$(userId)).data.role in ['student', ''])) ||
+        // Allow students to look up parents/admins
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student' &&
+         get(/databases/$(database)/documents/users/$(userId)).data.role in ['parent', 'admin'])
       );
       allow create: if isAuthenticated() && (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data, userId);
       allow update: if isAuthenticated() && (
@@ -293,6 +314,22 @@ service cloud.firestore {
       allow create: if isAuthenticated() && (request.auth.uid == request.resource.data.studentId || isAdmin());
       allow update: if isAuthenticated() && (request.auth.uid == resource.data.studentId || isAdmin());
       allow delete: if isAuthenticated() && (request.auth.uid == resource.data.studentId || isAdmin());
+    }
+
+    // Trials Collection
+    match /trials/{trialId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.studentId || isParentOf(resource.data.studentId) || isAdmin());
+      allow create: if isAuthenticated() && isValidTrial(request.resource.data) && (request.auth.uid == request.resource.data.studentId || isAdmin());
+      allow update: if isAuthenticated() && isValidTrial(request.resource.data) && (request.auth.uid == resource.data.studentId || isAdmin());
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.studentId || isAdmin());
+    }
+
+    // Global Topics Collection
+    match /global_topics/{topicId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidGlobalTopic(request.resource.data);
+      allow update: if isAuthenticated() && isValidGlobalTopic(request.resource.data);
+      allow delete: if isAdmin();
     }
   }
 }

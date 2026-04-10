@@ -228,7 +228,17 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                 <Shield size={20} />
                 <span className="font-black uppercase tracking-widest text-[10px]">Your Parent ID</span>
               </div>
-              <p className="text-sm font-mono font-bold text-brand-900 select-all cursor-pointer" title="Click to select">{user.uid}</p>
+              <p 
+                className="text-sm font-mono font-bold text-brand-900 select-all cursor-pointer flex items-center gap-2 group" 
+                title="Click to copy"
+                onClick={() => {
+                  navigator.clipboard.writeText(user.uid);
+                  alert("Parent ID copied to clipboard!");
+                }}
+              >
+                {user.uid}
+                <Plus size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+              </p>
               <div className="flex flex-col gap-2">
                 <button 
                   onClick={async () => {

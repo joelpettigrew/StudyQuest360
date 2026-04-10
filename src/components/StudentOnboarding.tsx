@@ -21,7 +21,7 @@ const steps = [
   },
   {
     title: "Battle Concepts",
-    desc: "Struggling with a topic? Use AI Study Assist to generate guides and battle concepts in mini-games to earn XP.",
+    desc: "Struggling with a topic? Consult The Oracle to generate guides and battle concepts in mini-games to earn XP.",
     icon: <Gamepad2 className="text-purple-500" size={48} />,
     color: "bg-purple-50"
   },

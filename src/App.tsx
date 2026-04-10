@@ -57,7 +57,8 @@ import {
   Wand2,
   Tent,
   Mountain,
-  Trees
+  Trees,
+  Flag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -116,8 +117,19 @@ import {
   Scroll,
   GameSession,
   StudyHistory,
-  AnswerBank
+  AnswerBank,
+  Trial,
+  GlobalTopic
 } from './types';
+
+import forest1 from './components/Forest1.png';
+import forest2 from './components/Forest2.png';
+import lake from './components/lake.png';
+import lake2 from './components/lake2.png';
+import lakeandtrees from './components/lakeandtrees.png';
+import mountains from './components/Mountains.png';
+import mountains2 from './components/mountains2.png';
+import mountains3 from './components/mountains3.png';
 
 // Components
 import StudyAssist from './components/StudyAssist';
@@ -146,6 +158,8 @@ function StudyQuestApp() {
   const [parentSettings, setParentSettings] = useState<ParentSettings | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'today' | 'upcoming' | 'done'>('all');
+  const [dateFilter, setDateFilter] = useState<Date | null>(null);
+  const [showOverdueOnly, setShowOverdueOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -174,7 +188,115 @@ function StudyQuestApp() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const questBoardRef = React.useRef<HTMLDivElement>(null);
 
+  const [trials, setTrials] = useState<Trial[]>([]);
+  const [isAddTrialModalOpen, setIsAddTrialModalOpen] = useState(false);
+  const [isTrialStudyOpen, setIsTrialStudyOpen] = useState(false);
+  const [selectedTrial, setSelectedTrial] = useState<Trial | null>(null);
+  const [editingTrial, setEditingTrial] = useState<Trial | null>(null);
+
   const isAdminUser = user?.email === 'pettigrewjoel@gmail.com' || user?.role === 'admin';
+
+  const handleAddTrial = async (data: any) => {
+    if (!user) return;
+    try {
+      const targetUser = impersonatedStudent || user;
+      const trialData = {
+        ...data,
+        studentId: targetUser.uid,
+        status: 'not-started',
+        createdAt: new Date().toISOString()
+      };
+      
+      const docRef = await addDoc(collection(db, 'trials'), trialData);
+      
+      // Process each topic for global database and answer bank
+      for (const topic of data.topics) {
+        await processTopicForGlobalDB(topic, data.subject, targetUser.grade || '9th Grade', targetUser.uid);
+      }
+      
+      setIsAddTrialModalOpen(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'trials');
+    }
+  };
+
+  const processTopicForGlobalDB = async (topic: string, subject: string, grade: string, studentId: string) => {
+    try {
+      // Check global_topics
+      const q = query(
+        collection(db, 'global_topics'),
+        where('subject', '==', subject),
+        where('topic', '==', topic),
+        where('grade', '==', grade)
+      );
+      const snapshot = await getDocs(q);
+      
+      let globalData: any;
+      
+      if (snapshot.empty) {
+        // Generate new via AI
+        const aiResponse = await generateAIAnswerBankData(topic, subject, grade);
+        if (aiResponse) {
+          const newGlobalTopic = {
+            subject,
+            topic,
+            grade,
+            concepts: aiResponse.concepts,
+            questions: aiResponse.questions,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          const globalDoc = await addDoc(collection(db, 'global_topics'), newGlobalTopic);
+          globalData = { ...newGlobalTopic, id: globalDoc.id };
+        }
+      } else {
+        globalData = { ...snapshot.docs[0].data(), id: snapshot.docs[0].id };
+      }
+
+      if (globalData) {
+        // Populate student's answer bank from global data
+        await addDoc(collection(db, 'answer_banks'), {
+          studentId,
+          assignmentId: 'trial_topic',
+          topic,
+          subject,
+          concepts: globalData.concepts.map((c: any) => ({ ...c, status: 'kept' })),
+          relationships: [],
+          questions: globalData.questions,
+          createdAt: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error("Error processing global topic:", error);
+    }
+  };
+
+  const generateAIAnswerBankData = async (topic: string, subject: string, grade: string) => {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+    
+    const prompt = `Create an educational answer bank for a ${grade} student studying ${subject}: ${topic}.
+    Return JSON with:
+    1. concepts: array of {term, definition} (8-12 items)
+    2. questions: array of {question, correctAnswer, distractors: string[]} (10-15 items)`;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+        }
+      });
+      const text = response.text;
+      if (!text) return null;
+      // Clean markdown if present
+      const jsonStr = text.replace(/```json\n?|\n?```/g, '');
+      return JSON.parse(jsonStr);
+    } catch (e) {
+      console.error("AI Generation failed", e);
+      return null;
+    }
+  };
 
   const handleUpdateAssignment = async (id: string, data: any) => {
     try {
@@ -273,6 +395,13 @@ function StudyQuestApp() {
       handleFirestoreError(error, OperationType.GET, 'answer_banks');
     });
 
+    const qTrials = query(collection(db, 'trials'), where('studentId', '==', targetUid));
+    const unsubscribeTrials = onSnapshot(qTrials, (snapshot) => {
+      setTrials(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Trial)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'trials');
+    });
+
     return () => {
       unsubscribeUser();
       unsubscribeScrolls();
@@ -280,6 +409,7 @@ function StudyQuestApp() {
       unsubscribeGameSessions();
       unsubscribeStudyHistory();
       unsubscribeAnswerBanks();
+      unsubscribeTrials();
     };
   }, [auth.currentUser?.uid, impersonatedStudent]);
 
@@ -470,6 +600,41 @@ function StudyQuestApp() {
     }
   };
 
+  const handleDeleteTrial = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'trials', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'trials');
+    }
+  };
+
+  const handleToggleTrialComplete = async (trial: Trial) => {
+    try {
+      const newStatus = trial.status === 'completed' ? 'not-started' : 'completed';
+      await updateDoc(doc(db, 'trials', trial.id), { status: newStatus });
+      
+      if (newStatus === 'completed') {
+        const targetUser = impersonatedStudent || user;
+        if (targetUser) {
+          await updateDoc(doc(db, 'users', targetUser.uid), {
+            xp: (targetUser.xp || 0) + 200 // Trials give more XP
+          });
+        }
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `trials/${trial.id}`);
+    }
+  };
+
+  const handleUpdateTrial = async (id: string, data: any) => {
+    try {
+      await updateDoc(doc(db, 'trials', id), data);
+      setEditingTrial(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `trials/${id}`);
+    }
+  };
+
   const handleAddAssignment = async (data: any) => {
     if (!user) return;
     try {
@@ -490,7 +655,8 @@ function StudyQuestApp() {
       });
       
       // Generate answer bank asynchronously
-      generateAnswerBank(docRef.id, targetUser.uid, data.topic || data.title, data.subject, targetUser.grade);
+      // Now using global DB logic
+      await processTopicForGlobalDB(data.topic || data.title, data.subject, targetUser.grade || '9th Grade', targetUser.uid);
       
       await updateDoc(doc(db, 'users', targetUser.uid), updates);
       setIsAddModalOpen(false);
@@ -584,8 +750,8 @@ function StudyQuestApp() {
     return ['all', ...Array.from(uniqueSubjects).map(s => s.charAt(0).toUpperCase() + s.slice(1))];
   }, [assignments]);
 
-  const filteredAssignments = useMemo(() => {
-    return assignments.filter(a => {
+  const filteredItems = useMemo(() => {
+    const filteredAssignments = assignments.filter(a => {
       const matchesSearch = a.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                            a.subject.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
@@ -593,13 +759,46 @@ function StudyQuestApp() {
       const matchesSubject = subjectFilter === 'all' || a.subject.trim().toLowerCase() === subjectFilter.toLowerCase();
       if (!matchesSubject) return false;
 
+      if (dateFilter) {
+        return isSameDay(parseISO(a.dueDate), dateFilter) && a.status !== 'completed';
+      }
+
+      if (showOverdueOnly) {
+        return isBefore(parseISO(a.dueDate), startOfDay(new Date())) && a.status !== 'completed';
+      }
+
       if (filter === 'all') return a.status !== 'completed';
       if (filter === 'today') return isToday(parseISO(a.dueDate)) && a.status !== 'completed';
       if (filter === 'upcoming') return isAfter(parseISO(a.dueDate), startOfDay(new Date())) && !isToday(parseISO(a.dueDate)) && a.status !== 'completed';
       if (filter === 'done') return a.status === 'completed';
       return true;
-    }).sort((a, b) => parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime());
-  }, [assignments, filter, searchQuery, subjectFilter]);
+    }).map(a => ({ ...a, type: 'assignment' as const }));
+
+    const filteredTrials = trials.filter(t => {
+      const matchesSearch = t.subject.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                           t.topics.some(tp => tp.toLowerCase().includes(searchQuery.toLowerCase()));
+      if (!matchesSearch) return false;
+
+      const matchesSubject = subjectFilter === 'all' || t.subject.trim().toLowerCase() === subjectFilter.toLowerCase();
+      if (!matchesSubject) return false;
+
+      if (dateFilter) {
+        return isSameDay(parseISO(t.dueDate), dateFilter);
+      }
+
+      if (showOverdueOnly) {
+        return isBefore(parseISO(t.dueDate), startOfDay(new Date()));
+      }
+
+      if (filter === 'done') return t.status === 'completed';
+      if (filter === 'all') return t.status !== 'completed';
+      if (filter === 'today') return isToday(parseISO(t.dueDate)) && t.status !== 'completed';
+      if (filter === 'upcoming') return isAfter(parseISO(t.dueDate), startOfDay(new Date())) && !isToday(parseISO(t.dueDate)) && t.status !== 'completed';
+      return true;
+    }).map(t => ({ ...t, type: 'trial' as const }));
+
+    return [...filteredAssignments, ...filteredTrials].sort((a, b) => parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime());
+  }, [assignments, trials, filter, searchQuery, subjectFilter, dateFilter, showOverdueOnly]);
 
   if (showPrivacyPolicy) {
     return <PrivacyPolicy onBack={() => setShowPrivacyPolicy(false)} />;
@@ -675,7 +874,13 @@ function StudyQuestApp() {
             <div className="bg-slate-50 p-8 rounded-3xl border-2 border-slate-100 space-y-6">
               <div className="space-y-2">
                 <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Your Student ID</p>
-                <p className="text-2xl font-mono font-black text-brand-600 select-all cursor-pointer bg-white py-3 rounded-xl border-2 border-brand-100 shadow-sm">{user.uid}</p>
+                <p className="text-2xl font-mono font-black text-brand-600 select-all cursor-pointer bg-white py-3 rounded-xl border-2 border-brand-100 shadow-sm flex items-center justify-center gap-2 group" onClick={() => {
+                  navigator.clipboard.writeText(user.uid);
+                  alert("ID Copied to clipboard!");
+                }}>
+                  {user.uid}
+                  <Plus size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                </p>
               </div>
 
               <div className="pt-6 border-t border-slate-200">
@@ -1057,10 +1262,19 @@ function StudyQuestApp() {
                     </div>
                   </div>
 
+                  {/* New Trial Button */}
+                  <button 
+                    onClick={() => setIsAddTrialModalOpen(true)}
+                    className="flex items-center justify-center gap-3 px-8 py-4 bg-amber-500 text-white rounded-[2rem] font-black text-lg hover:bg-amber-600 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-amber-500/30 border-2 border-amber-600 font-sans group min-w-[200px]"
+                  >
+                    <Flame size={24} className="group-hover:animate-pulse" />
+                    <span>New Trial</span>
+                  </button>
+
                   {/* New Quest Button */}
                   <button 
                     onClick={() => setIsAddModalOpen(true)}
-                    className="flex items-center gap-3 px-8 py-4 bg-[#8b5cf6] text-white rounded-[2rem] font-black text-lg hover:bg-[#7c3aed] hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-[#8b5cf6]/30 border-2 border-[#7c3aed] font-sans group"
+                    className="flex items-center justify-center gap-3 px-8 py-4 bg-[#8b5cf6] text-white rounded-[2rem] font-black text-lg hover:bg-[#7c3aed] hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-[#8b5cf6]/30 border-2 border-[#7c3aed] font-sans group min-w-[200px]"
                   >
                     <Plus size={24} className="group-hover:rotate-90 transition-transform" />
                     <span>New Quest</span>
@@ -1071,10 +1285,29 @@ function StudyQuestApp() {
 
             <AssignmentTimeline 
               assignments={assignments} 
+              trials={trials}
               onSelect={(a) => {
                 setSelectedAssignment(a);
                 questBoardRef.current?.scrollIntoView({ behavior: 'smooth' });
               }} 
+              onTrialSelect={(t) => {
+                setSelectedTrial(t);
+                setIsTrialStudyOpen(true);
+              }}
+              onDateSelect={(date) => {
+                setDateFilter(date);
+                setShowOverdueOnly(false);
+                setFilter('all');
+                questBoardRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              onOverdueSelect={() => {
+                setShowOverdueOnly(true);
+                setDateFilter(null);
+                setFilter('all');
+                questBoardRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              selectedDate={dateFilter}
+              isOverdueSelected={showOverdueOnly}
             />
 
             <div className="relative font-serif">
@@ -1093,7 +1326,19 @@ function StudyQuestApp() {
                       <div className="p-10 border-b-4 border-[#e6d5b8] flex flex-col md:flex-row md:items-center justify-between gap-8 bg-white/50 relative z-10">
                         <div>
                           <h3 className="text-4xl font-black text-[#4a3f35] tracking-tight">Quest Board</h3>
-                          <p className="text-[#8c7b68] font-bold font-sans mt-1">Manage your active learning adventures</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className="text-[#8c7b68] font-bold font-sans">
+                              {dateFilter ? `Quests for ${format(dateFilter, 'MMM do')}` : showOverdueOnly ? 'Overdue Quests' : 'Manage your active learning adventures'}
+                            </p>
+                            {(dateFilter || showOverdueOnly) && (
+                              <button 
+                                onClick={() => { setDateFilter(null); setShowOverdueOnly(false); }}
+                                className="text-[10px] font-black text-[#8b5cf6] uppercase tracking-widest hover:underline"
+                              >
+                                (Clear Filter)
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-4">
                           <div className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-[#e6d5b8] rounded-2xl shadow-sm">
@@ -1140,27 +1385,42 @@ function StudyQuestApp() {
                       </div>
 
                       <div className="divide-y-2 divide-[#e6d5b8] overflow-y-auto flex-1 custom-scrollbar relative z-10 bg-white/30">
-                        {filteredAssignments.length > 0 ? filteredAssignments.map(a => (
+                        {filteredItems.length > 0 ? filteredItems.map(item => (
+                          item.type === 'assignment' ? (
                             <AssignmentRow 
-                              key={a.id} 
-                              assignment={a} 
-                              onToggle={() => handleToggleComplete(a)} 
-                              onDelete={() => handleDeleteAssignment(a.id)}
+                              key={item.id} 
+                              assignment={item} 
+                              onToggle={() => handleToggleComplete(item)} 
+                              onDelete={() => handleDeleteAssignment(item.id)}
                               onSelect={() => {
-                                setSelectedAssignment(a);
+                                setSelectedAssignment(item);
                               }}
                               onStudy={() => {
-                                setSelectedAssignment(a);
-                                setSelectedTopic(a.topic || a.title);
+                                setSelectedAssignment(item);
+                                setSelectedTopic(item.topic || item.title);
                                 setIsStudyAssistOpen(true);
                               }}
                               onTraining={() => {
-                                setTrainingAssignment(a);
+                                setTrainingAssignment(item);
                                 setIsTrainingOpen(true);
                               }}
-                              onEdit={() => setEditingAssignment(a)}
-                              isSelected={selectedAssignment?.id === a.id}
+                              onEdit={() => setEditingAssignment(item)}
+                              isSelected={selectedAssignment?.id === item.id}
                             />
+                          ) : (
+                            <TrialRow 
+                              key={item.id}
+                              trial={item}
+                              onToggle={() => handleToggleTrialComplete(item)} 
+                              onDelete={() => handleDeleteTrial(item.id)}
+                              onSelect={() => {
+                                setSelectedTrial(item);
+                                setIsTrialStudyOpen(true);
+                              }}
+                              onEdit={() => setEditingTrial(item)}
+                              isSelected={selectedTrial?.id === item.id}
+                            />
+                          )
                         )) : (
                           <div className="p-20 text-center space-y-6">
                             <div className="w-24 h-24 bg-white border-4 border-[#e6d5b8] rounded-[2rem] flex items-center justify-center text-[#b8a992] mx-auto shadow-inner">
@@ -1226,7 +1486,7 @@ function StudyQuestApp() {
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div>
-                  <h3 className="text-2xl font-black text-slate-900">Study Assistant</h3>
+                  <h3 className="text-2xl font-black text-slate-900">The Oracle</h3>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Topic: {selectedTopic}</p>
                 </div>
                 <button 
@@ -1299,6 +1559,18 @@ function StudyQuestApp() {
 
       {/* Add Modal */}
       <AnimatePresence>
+        {editingTrial && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200">
+              <EditTrialForm 
+                trial={editingTrial} 
+                onUpdate={handleUpdateTrial} 
+                onClose={() => setEditingTrial(null)} 
+              />
+            </motion.div>
+          </div>
+        )}
+
         {editingAssignment && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200">
@@ -1307,6 +1579,107 @@ function StudyQuestApp() {
                 onUpdate={handleUpdateAssignment} 
                 onClose={() => setEditingAssignment(null)} 
               />
+            </motion.div>
+          </div>
+        )}
+
+        {isAddTrialModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsAddTrialModalOpen(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden">
+              <AddTrialForm onAdd={handleAddTrial} onClose={() => setIsAddTrialModalOpen(false)} />
+            </motion.div>
+          </div>
+        )}
+
+        {isTrialStudyOpen && selectedTrial && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              className="absolute inset-0 bg-slate-900/80 backdrop-blur-md" 
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.9, y: 20 }} 
+              className="relative w-full max-w-6xl h-full max-h-[90vh] bg-white rounded-[3rem] shadow-2xl overflow-hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900">Trial Preparation</h3>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Subject: {selectedTrial.subject}</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setIsTrialStudyOpen(false);
+                    setSelectedTrial(null);
+                  }}
+                  className="p-3 bg-white border border-slate-200 text-slate-400 hover:text-slate-900 rounded-2xl transition-all shadow-sm"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {selectedTrial.topics.map((topic, i) => (
+                    <div key={i} className="p-6 bg-amber-50 rounded-3xl border-2 border-amber-100 space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-white">
+                          <Flame size={20} />
+                        </div>
+                        <h4 className="font-black text-amber-900">{topic}</h4>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setSelectedTopic(topic);
+                          setIsStudyAssistOpen(true);
+                        }}
+                        className="w-full py-3 bg-white border-2 border-amber-200 text-amber-600 rounded-xl font-bold hover:bg-amber-100 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Wand2 size={16} />
+                        Study Topic
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="mt-12 p-8 bg-slate-900 rounded-[2.5rem] text-white space-y-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center">
+                      <BrainCircuit size={32} />
+                    </div>
+                    <div>
+                      <h4 className="text-2xl font-black">Trial Training</h4>
+                      <p className="text-slate-400 font-medium">Randomized practice across all trial topics</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      // Create a dummy assignment for training module
+                      const dummyAssignment: Assignment = {
+                        id: 'trial-training',
+                        studentId: selectedTrial.studentId,
+                        parentId: '', // Required by interface
+                        title: `Trial Training: ${selectedTrial.subject}`,
+                        subject: selectedTrial.subject,
+                        topic: selectedTrial.topics.join(', '),
+                        dueDate: selectedTrial.dueDate,
+                        priority: 'high',
+                        status: 'not-started',
+                        xp: 0,
+                        createdAt: new Date().toISOString()
+                      };
+                      setTrainingAssignment(dummyAssignment);
+                      setIsTrainingOpen(true);
+                    }}
+                    className="w-full py-6 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-black text-xl transition-all shadow-xl shadow-emerald-500/20"
+                  >
+                    Start Training Mode
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}
@@ -1983,6 +2356,80 @@ function FilterTab({ label, active, onClick }: { label: string, active: boolean,
   );
 }
 
+function EditTrialForm({ trial, onUpdate, onClose }: { trial: Trial, onUpdate: (id: string, data: any) => void, onClose: () => void }) {
+  const [subject, setSubject] = useState(trial.subject);
+  const [topics, setTopics] = useState(trial.topics);
+  const [dueDate, setDueDate] = useState(trial.dueDate);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdate(trial.id, { subject, topics, dueDate });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="p-8 space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Edit Trial</h3>
+        <button type="button" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+          <X size={20} />
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-2">Subject</label>
+          <input 
+            type="text" 
+            required 
+            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:ring-2 focus:ring-amber-500 outline-none"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-2">Topics (3 required)</label>
+          <div className="space-y-2">
+            {[0, 1, 2].map(i => (
+              <input 
+                key={i}
+                type="text" 
+                required 
+                placeholder={`Topic ${i + 1}`}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:ring-2 focus:ring-amber-500 outline-none"
+                value={topics[i] || ''}
+                onChange={(e) => {
+                  const newTopics = [...topics];
+                  newTopics[i] = e.target.value;
+                  setTopics(newTopics);
+                }}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-2">Due Date</label>
+          <input 
+            type="date" 
+            required 
+            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:ring-2 focus:ring-amber-500 outline-none"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <button 
+        type="submit"
+        className="w-full py-4 bg-amber-500 text-white rounded-2xl font-black text-lg shadow-xl hover:bg-amber-600 transition-all active:scale-95"
+      >
+        Save Changes
+      </button>
+    </form>
+  );
+}
+
 function EditAssignmentForm({ assignment, onUpdate, onClose }: { assignment: Assignment, onUpdate: (id: string, data: any) => void, onClose: () => void }) {
   const [title, setTitle] = useState(assignment.title);
   const [subject, setSubject] = useState(assignment.subject);
@@ -2116,266 +2563,421 @@ const AssignmentRow: React.FC<{
   );
 };
 
-function AssignmentTimeline({ assignments, onSelect }: { assignments: Assignment[], onSelect: (a: Assignment) => void }) {
+const TrialRow: React.FC<{ 
+  trial: Trial, 
+  onToggle: () => void,
+  onDelete: () => void, 
+  onSelect: () => void, 
+  onEdit: () => void,
+  isSelected?: boolean 
+}> = ({ trial, onToggle, onDelete, onSelect, onEdit, isSelected }) => {
+  return (
+    <div className={cn(
+      "group p-6 flex items-center gap-6 transition-all hover:bg-white/50 cursor-pointer border-l-8", 
+      trial.status === 'completed' ? "opacity-60 border-transparent" : isSelected ? "border-amber-500 bg-amber-500/5" : "border-transparent"
+    )}>
+      <div className="flex flex-col items-center gap-1 shrink-0">
+        <button onClick={(e) => { e.stopPropagation(); onToggle(); }} className={cn(
+          "w-12 h-12 rounded-2xl border-4 flex items-center justify-center transition-all shadow-lg transform active:scale-90",
+          trial.status === 'completed' 
+            ? "bg-emerald-500 border-emerald-600 text-white rotate-[360deg]" 
+            : "bg-amber-100 border-amber-200 text-amber-600 hover:border-amber-500"
+        )}>
+          {trial.status === 'completed' ? <CheckCircle2 size={24} strokeWidth={3} /> : <Flame size={24} strokeWidth={3} />}
+        </button>
+        <span className={cn(
+          "text-[8px] font-black uppercase tracking-tighter",
+          trial.status === 'completed' ? "text-emerald-600" : "text-amber-600"
+        )}>
+          {trial.status === 'completed' ? 'Conquered' : 'Trial'}
+        </span>
+      </div>
+      <div className="flex-1 min-w-0" onClick={onSelect}>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center gap-1.5 text-xs font-black text-[#8c7b68] uppercase tracking-widest font-sans">
+            <Calendar size={14} />
+            {format(parseISO(trial.dueDate), 'MMMM d, yyyy')}
+          </div>
+          <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-3 py-2 rounded-full border border-amber-200 font-sans">
+            {trial.subject}
+          </span>
+        </div>
+        <h5 className={cn("text-xl font-black text-[#4a3f35] truncate leading-tight", trial.status === 'completed' && "line-through text-slate-400")}>
+          Trial: {trial.topics.join(', ')}
+        </h5>
+      </div>
+      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button onClick={(e) => { e.stopPropagation(); onSelect(); }} className="px-4 py-2 bg-amber-500 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-amber-600 transition-all shadow-md border-2 border-amber-600 flex items-center gap-2">
+          <Wand2 size={16} />
+          Prepare
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-3 bg-white text-[#b8a992] hover:text-[#8b5cf6] rounded-xl border border-[#e6d5b8] shadow-sm transition-all hover:scale-110">
+          <Settings size={20} />
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-3 bg-white text-[#b8a992] hover:text-rose-500 rounded-xl border border-[#e6d5b8] shadow-sm transition-all hover:scale-110">
+          <Trash2 size={20} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+function AssignmentTimeline({ 
+  assignments, 
+  trials = [],
+  onSelect, 
+  onTrialSelect,
+  onDateSelect, 
+  onOverdueSelect, 
+  selectedDate, 
+  isOverdueSelected 
+}: { 
+  assignments: Assignment[], 
+  trials?: Trial[],
+  onSelect: (a: Assignment) => void,
+  onTrialSelect: (t: Trial) => void,
+  onDateSelect: (date: Date) => void,
+  onOverdueSelect: () => void,
+  selectedDate: Date | null,
+  isOverdueSelected: boolean
+}) {
   const today = startOfDay(new Date());
-  const twoWeeksLater = addDays(today, 14);
+  // User requested 14 flags
+  const days = Array.from({ length: 14 }, (_, i) => addDays(today, i));
   
-  const days = eachDayOfInterval({ start: today, end: twoWeeksLater });
-
-  // Tolkien-like Pencil Elements
-  const PencilMountain = ({ x, y, scale = 1 }: { x: number, y: number, scale?: number }) => (
-    <g transform={`translate(${x}, ${y}) scale(${scale})`} className="opacity-40 pointer-events-none">
-      {/* Main peak */}
-      <path d="M 0,40 L 20,0 L 40,40" fill="none" stroke="#8c7b68" strokeWidth="1.5" strokeLinecap="round" />
-      {/* Snow cap detail */}
-      <path d="M 15,10 L 20,15 L 25,10" fill="none" stroke="#8c7b68" strokeWidth="1" strokeLinecap="round" />
-      {/* Shading lines */}
-      <path d="M 10,20 L 15,25 M 25,10 L 30,15" fill="none" stroke="#8c7b68" strokeWidth="1" strokeLinecap="round" />
-      {/* Base detail */}
-      <path d="M 5,30 Q 15,25 25,35" fill="none" stroke="#8c7b68" strokeWidth="1" strokeLinecap="round" />
-      {/* Secondary peak */}
-      <path d="M 25,40 L 35,20 L 45,40" fill="none" stroke="#8c7b68" strokeWidth="1" strokeLinecap="round" />
-      {/* Small rocks */}
-      <circle cx="5" cy="42" r="1.5" fill="#8c7b68" />
-      <circle cx="45" cy="42" r="1" fill="#8c7b68" />
+  const OrnateCompassRose = ({ x, y, scale = 1 }: { x: number, y: number, scale?: number }) => (
+    <g transform={`translate(${x}, ${y}) scale(${scale})`} className="pointer-events-none">
+      <circle cx="0" cy="0" r="45" fill="none" stroke="#a68a5c" strokeWidth="1" strokeDasharray="2 2" />
+      <circle cx="0" cy="0" r="40" fill="none" stroke="#2c241a" strokeWidth="0.5" />
+      <path d="M 0,-50 L 8,0 L 0,50 L -8,0 Z" fill="#a68a5c" stroke="#2c241a" strokeWidth="1" />
+      <path d="M -50,0 L 0,-8 L 50,0 L 0,8 Z" fill="#a68a5c" stroke="#2c241a" strokeWidth="1" />
+      <path d="M 30,-30 L 0,0 L -30,30 M -30,-30 L 0,0 L 30,30" fill="none" stroke="#2c241a" strokeWidth="0.8" />
+      <text x="0" y="-55" textAnchor="middle" className="fill-[#2c241a] font-serif text-[14px] font-bold">N</text>
+      <text x="55" y="5" textAnchor="middle" className="fill-[#2c241a] font-serif text-[14px] font-bold">E</text>
+      <text x="0" y="65" textAnchor="middle" className="fill-[#2c241a] font-serif text-[14px] font-bold">S</text>
+      <text x="-55" y="5" textAnchor="middle" className="fill-[#2c241a] font-serif text-[14px] font-bold">W</text>
     </g>
   );
 
-  const PencilTree = ({ x, y, scale = 1 }: { x: number, y: number, scale?: number }) => (
-    <g transform={`translate(${x}, ${y}) scale(${scale})`} className="opacity-30 pointer-events-none">
-      {/* Trunk */}
-      <path d="M 10,40 L 10,30" fill="none" stroke="#8c7b68" strokeWidth="2" strokeLinecap="round" />
-      {/* Layers */}
-      <path d="M 0,30 L 10,10 L 20,30 Z" fill="none" stroke="#8c7b68" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M 2,22 L 10,5 L 18,22 Z" fill="none" stroke="#8c7b68" strokeWidth="1.5" strokeLinecap="round" />
-      {/* Texture */}
-      <path d="M 5,20 L 15,20 M 7,12 L 13,12" fill="none" stroke="#8c7b68" strokeWidth="1" strokeLinecap="round" />
-      {/* Ground lines */}
-      <path d="M 5,42 L 15,42" fill="none" stroke="#8c7b68" strokeWidth="0.5" />
+  const BrassCompass = () => (
+    <div className="w-12 h-12 relative flex items-center justify-center">
+      <div className="absolute inset-0 rounded-full border-4 border-[#8c6d46] bg-[#5c4033] shadow-lg" />
+      <div className="absolute inset-2 rounded-full border-2 border-[#a68a5c] bg-[#fdf6e3]" />
+      <div className="w-1 h-8 bg-[#2c241a] rounded-full rotate-45 relative z-10" />
+      <div className="w-2 h-2 bg-[#a68a5c] rounded-full absolute z-20" />
+    </div>
+  );
+
+  const PennantFlag = ({ color, active, count }: { color: string, active: boolean, count: number }) => (
+    <g className={cn("transition-all duration-500", active ? "scale-110" : "")}>
+      <path d="M 0,0 V 60" fill="none" stroke="#5c4033" strokeWidth="3" strokeLinecap="round" />
+      <path d="M -2,0 H 2" fill="none" stroke="#5c4033" strokeWidth="2" />
+      <path 
+        d="M 0,5 L 40,15 L 0,25 Z" 
+        fill={color} 
+        stroke="#2c241a" 
+        strokeWidth="1" 
+        className="opacity-90"
+      />
+      <text x="12" y="18" textAnchor="middle" className="fill-[#2c241a] font-bold text-[12px] pointer-events-none">
+        {count > 0 ? count : ""}
+      </text>
+      <path d="M 40,15 L 45,14 M 40,15 L 44,17" fill="none" stroke="#2c241a" strokeWidth="0.5" />
     </g>
   );
 
-  const PencilRiver = ({ x, y, width = 100 }: { x: number, y: number, width?: number }) => (
-    <g transform={`translate(${x}, ${y})`} className="opacity-20 pointer-events-none">
-      <path d={`M 0,0 Q ${width/4},10 ${width/2},0 T ${width},0`} fill="none" stroke="#8c7b68" strokeWidth="1" strokeDasharray="4 2" />
-      <path d={`M 5,5 Q ${width/4},15 ${width/2},5 T ${width},5`} fill="none" stroke="#8c7b68" strokeWidth="1" strokeDasharray="4 2" />
-    </g>
+  const WantedPoster = ({ count, onClick, active }: { count: number, onClick: () => void, active: boolean }) => (
+    <motion.div 
+      initial={{ rotate: -5 }}
+      whileHover={{ rotate: 0, scale: 1.05 }}
+      onClick={onClick}
+      className={cn(
+        "absolute bottom-8 left-8 z-40 cursor-pointer transition-all",
+        active ? "ring-4 ring-rose-400 rounded-lg scale-110" : ""
+      )}
+    >
+      <div className="w-24 h-32 bg-[#f4e4bc] border-2 border-[#2c241a] shadow-lg relative p-2 flex flex-col items-center justify-center text-center">
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-10" />
+        <div className="w-full border-b border-[#2c241a] pb-1 mb-1">
+          <p className="text-[8px] font-black uppercase tracking-widest text-rose-800 font-['Cinzel']">Wanted</p>
+        </div>
+        <Skull size={24} className="text-rose-900 mb-1 opacity-80" />
+        <p className="text-[6px] font-bold text-[#2c241a] uppercase tracking-tight font-['Cinzel']">Overdue</p>
+        <p className="text-xl font-black text-rose-900 font-['Cinzel']">{count}</p>
+        <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-[#e6d5b8] rotate-45 border-t border-r border-[#2c241a]" />
+        <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-[#e6d5b8] -rotate-45 border-t border-l border-[#2c241a]" />
+      </div>
+    </motion.div>
   );
-  
-  const getAssignmentsForDay = (day: Date) => {
-    return assignments.filter(a => {
-      const dueDate = startOfDay(parseISO(a.dueDate));
-      return isSameDay(dueDate, day) && a.status !== 'completed';
-    });
-  };
 
-  const overdue = assignments.filter(a => {
-    const dueDate = startOfDay(parseISO(a.dueDate));
-    return isBefore(dueDate, today) && a.status !== 'completed';
-  });
-
-  const weekendIcons = [
-    Package, FlaskConical, Sword, Crown, Gem, Key, Map, Compass, ScrollIcon, BookOpen, Star, Moon, Sun, Ghost, Wand2
-  ];
-
-  // Calculate path points for alignment
   const pathPoints = useMemo(() => {
-    return days.map((_, i) => ({
-      x: i * 120 + 60, // 120 is the min-w-[120px] gap
-      y: 128 + Math.sin(i * 0.8) * 40
+    // 14 points in a weave - adjusted spacing to fit viewBox
+    return Array.from({ length: 14 }, (_, i) => ({
+      x: 60 + i * 82,
+      y: 300 + Math.sin(i * 0.8) * 110
     }));
-  }, [days]);
+  }, []);
+
+  const backgroundElements = useMemo(() => {
+    const images = [mountains, forest1, mountains2, forest2, lake, lake2, lakeandtrees, mountains3];
+    // Shuffle images
+    const shuffled = [...images].sort(() => Math.random() - 0.5);
+    
+    // Quadrants: Top-Left, Top-Right, Bottom-Left, Bottom-Right
+    // viewBox is 1200x650. Header is top 100px.
+    // Quadrant size: 600x275
+    const quads = [
+      { x: 0, y: 100, w: 600, h: 275 },
+      { x: 600, y: 100, w: 600, h: 275 },
+      { x: 100, y: 375, w: 500, h: 275 }, // Moved right (closer to middle)
+      { x: 600, y: 375, w: 500, h: 275 }  // Moved left (closer to middle)
+    ];
+
+    return quads.map((q, i) => {
+      const imgW = q.w * 0.96;
+      const imgH = q.h * 0.96;
+      return {
+        src: shuffled[i],
+        x: q.x + (q.w - imgW) / 2,
+        y: q.y + (q.h - imgH) / 2,
+        w: imgW,
+        h: imgH,
+        quadId: i
+      };
+    });
+  }, []);
 
   const svgPath = useMemo(() => {
-    if (pathPoints.length === 0) return "";
-    let d = `M 0,128`;
-    pathPoints.forEach((p, i) => {
-      if (i === 0) {
-        d += ` L ${p.x},${p.y}`;
-      } else {
-        const prev = pathPoints[i-1];
-        const cp1x = prev.x + (p.x - prev.x) / 2;
-        const cp1y = prev.y;
-        const cp2x = prev.x + (p.x - prev.x) / 2;
-        const cp2y = p.y;
-        d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p.x},${p.y}`;
-      }
-    });
-    d += ` L ${pathPoints[pathPoints.length-1].x + 200},128`;
+    let d = `M ${pathPoints[0].x},${pathPoints[0].y}`;
+    for (let i = 1; i < pathPoints.length; i++) {
+      const p = pathPoints[i];
+      const prev = pathPoints[i-1];
+      const cp1x = prev.x + (p.x - prev.x) / 2;
+      const cp2x = prev.x + (p.x - prev.x) / 2;
+      d += ` C ${cp1x},${prev.y} ${cp2x},${p.y} ${p.x},${p.y}`;
+    }
     return d;
   }, [pathPoints]);
 
   return (
-    <div className="w-full bg-[#fdf6e3] p-8 rounded-[2.5rem] border-4 border-[#e6d5b8] shadow-lg mb-8 overflow-hidden relative font-serif">
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-20 pointer-events-none" />
-      
-      <div className="relative z-10 flex items-center justify-between mb-8">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-[#8b5cf6] text-white rounded-xl shadow-md border-2 border-[#7c3aed]">
-            <Map size={20} />
+    <div className="w-full bg-[#fdf6e3] rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl mb-12 overflow-hidden relative font-serif">
+      {/* Parchment Scroll Container */}
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="relative w-full h-[650px] bg-[#e6d5b8] overflow-hidden"
+      >
+        {/* Parchment Texture */}
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-40 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-tr from-[#8c6d46]/10 via-transparent to-[#8c6d46]/10 pointer-events-none" />
+        
+        {/* Tattered Edges */}
+        <div className="absolute inset-0 border-[12px] border-transparent" style={{ 
+          borderImageSource: "url('https://www.transparenttextures.com/patterns/paper-fibers.png')",
+          borderImageSlice: 30,
+          filter: 'contrast(1.2) sepia(0.5)'
+        }} />
+
+        {/* Header Section - Moved to avoid overlap */}
+        <div className="absolute top-8 left-12 z-20 flex items-start gap-4">
+          <div className="space-y-0">
+            <h3 className="text-4xl font-bold text-[#2c241a] tracking-tight font-['Cinzel'] leading-none">THE QUEST TRAIL</h3>
+            <p className="text-[#5c4033] font-medium text-[10px] uppercase tracking-[0.2em] opacity-80 font-['Cinzel']">Chart your journey through the realms of knowledge</p>
           </div>
-          <h3 className="text-2xl font-black text-[#4a3f35] uppercase tracking-widest">Quest Map</h3>
         </div>
-        <div className="flex items-center gap-4 text-xs font-black uppercase tracking-widest text-[#8c7b68]">
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-[#8b5cf6] border-2 border-[#7c3aed]"></div>
-            <span>Quest Due</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-rose-500 border-2 border-rose-600"></div>
-            <span>Overdue</span>
-          </div>
-        </div>
-      </div>
 
-      <div className="relative h-72 flex items-center z-10 overflow-x-auto custom-scrollbar px-8 py-12">
-        {/* Wavy Map Path Line */}
-        <svg className="absolute inset-0 h-full pointer-events-none" style={{ width: pathPoints.length * 120 + 200 }}>
-          {/* Background Decorations - Placed to avoid path (y ranges 88-168) */}
-          {/* Top Area (y < 60) */}
-          <PencilMountain x={100} y={20} scale={1.2} />
-          <PencilMountain x={400} y={10} scale={1.5} />
-          <PencilMountain x={700} y={25} scale={1.1} />
-          <PencilMountain x={1000} y={15} scale={1.4} />
-          <PencilMountain x={1300} y={20} scale={1.2} />
-          <PencilMountain x={1600} y={10} scale={1.6} />
-
-          <PencilTree x={250} y={40} scale={1.1} />
-          <PencilTree x={550} y={30} scale={0.9} />
-          <PencilTree x={850} y={45} scale={1.2} />
-          <PencilTree x={1150} y={35} scale={1} />
-          <PencilTree x={1450} y={40} scale={1.3} />
-
-          {/* Bottom Area (y > 200) */}
-          <PencilMountain x={200} y={220} scale={1.3} />
-          <PencilMountain x={500} y={230} scale={1.1} />
-          <PencilMountain x={800} y={215} scale={1.4} />
-          <PencilMountain x={1100} y={225} scale={1.2} />
-          <PencilMountain x={1400} y={210} scale={1.5} />
-          <PencilMountain x={1700} y={230} scale={1.3} />
-
-          <PencilTree x={150} y={210} />
-          <PencilTree x={450} y={220} scale={1.2} />
-          <PencilTree x={750} y={205} scale={0.8} />
-          <PencilTree x={1050} y={215} scale={1.1} />
-          <PencilTree x={1350} y={220} scale={0.9} />
-          <PencilTree x={1650} y={210} scale={1.2} />
+        {/* Map Content SVG */}
+        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 650">
+          {/* Compass Rose - Moved to top right */}
+          <OrnateCompassRose x={1100} y={50} scale={1} />
           
-          <PencilRiver x={50} y={240} width={300} />
-          <PencilRiver x={600} y={250} width={400} />
-          <PencilRiver x={1200} y={245} width={500} />
+          {/* PNG Background Elements */}
+          <defs>
+            {backgroundElements.map((el, i) => (
+              <radialGradient key={`grad-${i}`} id={`edgeFade-${i}`} cx="50%" cy="50%" r="50%">
+                <stop offset="40%" stopColor="white" stopOpacity="1" />
+                <stop offset="100%" stopColor="white" stopOpacity="0" />
+              </radialGradient>
+            ))}
+            {backgroundElements.map((el, i) => (
+              <mask key={`mask-${i}`} id={`maskFade-${i}`}>
+                <rect 
+                  x={el.x} 
+                  y={el.y} 
+                  width={el.w} 
+                  height={el.h} 
+                  fill={`url(#edgeFade-${i})`} 
+                />
+              </mask>
+            ))}
+          </defs>
+          {backgroundElements.map((el, i) => (
+            <image 
+              key={i}
+              href={el.src}
+              x={el.x}
+              y={el.y}
+              width={el.w}
+              height={el.h}
+              style={{ mixBlendMode: 'multiply' }}
+              className="pointer-events-none opacity-30"
+              mask={`url(#maskFade-${i})`}
+            />
+          ))}
 
+          {/* Labels */}
+          
+          {/* The Trail Path */}
           <path 
             d={svgPath} 
             fill="none" 
-            stroke="#d4c4a8" 
-            strokeWidth="6" 
-            strokeDasharray="12 12" 
+            stroke="#2c241a" 
+            strokeWidth="3" 
+            strokeDasharray="6 8" 
             strokeLinecap="round"
+            className="opacity-40"
           />
-        </svg>
 
-        <div className="flex-1 flex gap-0 relative min-w-max items-center">
-          {/* Overdue Section */}
-          {overdue.length > 0 && (
-            <div className="flex flex-col items-center relative group min-w-[120px]" style={{ transform: 'translateY(-20px)' }}>
-              <div className="absolute -top-24 flex flex-col-reverse items-center gap-2">
-                {overdue.map((a, idx) => {
-                  const size = idx >= 3 ? (idx >= 5 ? 'w-6 h-6' : 'w-8 h-8') : 'w-10 h-10';
-                  const iconSize = idx >= 3 ? (idx >= 5 ? 12 : 14) : 18;
-                  return (
-                    <button 
-                      key={a.id}
-                      onClick={() => onSelect(a)}
-                      className={cn(
-                        "rounded-full bg-rose-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-all border-2 border-rose-700 z-20 tooltip-trigger",
-                        size
-                      )}
-                      title={a.title}
-                    >
-                      <Skull size={iconSize} />
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="w-10 h-10 rounded-full bg-rose-200 border-4 border-rose-500 z-10 flex items-center justify-center mb-2 shadow-md">
-                <div className="w-4 h-4 bg-rose-600 rounded-full" />
-              </div>
-              <span className="text-[10px] font-black text-rose-600 uppercase tracking-widest bg-[#fdf6e3] px-2 py-1 rounded-md border border-rose-200">Overdue</span>
-            </div>
-          )}
-
-          {/* Timeline Days */}
+          {/* Markers and Dates */}
           {days.map((day, i) => {
-            const dayAssignments = getAssignmentsForDay(day);
-            const isWknd = isSaturday(day) || isSunday(day);
-            const isTodayDay = isToday(day);
-            
-            // Use the pre-calculated points for perfect alignment
             const point = pathPoints[i];
-            const yOffset = point ? point.y - 128 : 0;
+            const isSelected = selectedDate && isSameDay(day, selectedDate);
+            const isFirst = i === 0;
+            const isWknd = isSaturday(day) || isSunday(day);
+            const dayAssignments = assignments.filter(a => isSameDay(parseISO(a.dueDate), day) && a.status !== 'completed');
+            const dayTrials = trials.filter(t => isSameDay(parseISO(t.dueDate), day) && t.status !== 'completed');
             
             return (
-              <div 
-                key={day.toISOString()} 
-                className="flex flex-col items-center relative group min-w-[120px]" 
-                style={{ transform: `translateY(${yOffset}px)` }}
-              >
-                {dayAssignments.length > 0 && (
-                  <div className="absolute -top-24 flex flex-col-reverse items-center gap-2">
-                    {dayAssignments.map((a, idx) => {
-                      const size = idx >= 3 ? (idx >= 5 ? 'w-6 h-6' : 'w-8 h-8') : 'w-10 h-10';
-                      const textSize = idx >= 3 ? (idx >= 5 ? 'text-[8px]' : 'text-[10px]') : 'text-sm';
-                      return (
-                        <button 
-                          key={a.id}
-                          onClick={() => onSelect(a)}
-                          className={cn(
-                            "rounded-full bg-[#8b5cf6] text-white flex items-center justify-center shadow-lg hover:scale-110 transition-all border-2 border-[#7c3aed] z-20 tooltip-trigger",
-                            size
-                          )}
-                          title={a.title}
-                        >
-                          <span className={cn("font-black font-sans", textSize)}>{idx + 1}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+              <g key={day.toISOString()} transform={`translate(${point.x}, ${point.y - 60})`}>
+                <rect 
+                  x="-20" y="0" width="60" height="100" 
+                  fill="transparent" 
+                  className="cursor-pointer"
+                  onClick={() => onDateSelect(day)}
+                />
+                
+                <PennantFlag 
+                  color={isFirst ? "#d97706" : dayAssignments.length > 0 ? "#8b5cf6" : isWknd ? "#cbd5e1" : "#94a3b8"} 
+                  active={!!isSelected}
+                  count={dayAssignments.length}
+                />
+
+                {dayTrials.length > 0 && (
+                  <g transform="translate(0, 55)" className="cursor-pointer" onClick={(e) => { e.stopPropagation(); onTrialSelect(dayTrials[0]); }}>
+                    <motion.g
+                      animate={{ scale: [1, 1.2, 1] }}
+                      transition={{ repeat: Infinity, duration: 2 }}
+                    >
+                      <path d="M -8,0 Q 0,-15 8,0 Q 0,10 -8,0" fill="#f59e0b" />
+                      <path d="M -4,0 Q 0,-8 4,0 Q 0,5 -4,0" fill="#ef4444" />
+                      <Flame size={16} x={-8} y={-12} className="text-amber-500" />
+                    </motion.g>
+                  </g>
                 )}
-                
-                <div className={cn(
-                  "z-10 flex items-center justify-center mt-auto mb-2 transition-all shadow-md",
-                  isWknd ? "w-14 h-14 bg-white border-4 border-amber-400 rounded-2xl rotate-[-5deg] hover:rotate-0 hover:scale-110" : "w-8 h-8 rounded-full border-4",
-                  !isWknd && isTodayDay ? "bg-amber-200 border-amber-500" : 
-                  !isWknd && dayAssignments.length > 0 ? "bg-[#ddd6fe] border-[#8b5cf6]" : 
-                  !isWknd ? "bg-[#fdf6e3] border-[#d4c4a8]" : ""
-                )}>
-                  {isWknd ? (
-                    (() => {
-                      const WkndIcon = weekendIcons[i % weekendIcons.length];
-                      return <WkndIcon size={24} className="text-amber-500" />;
-                    })()
-                  ) : (
-                    <>
-                      {isTodayDay && <div className="w-3 h-3 bg-amber-600 rounded-full" />}
-                      {!isTodayDay && dayAssignments.length > 0 && <div className="w-3 h-3 bg-[#8b5cf6] rounded-full" />}
-                    </>
-                  )}
-                </div>
-                
-                <span className={cn(
-                  "text-[10px] font-black uppercase tracking-widest",
-                  isTodayDay ? "text-amber-600" :
-                  isWknd ? "text-amber-500" : "text-[#8c7b68]"
-                )}>
-                  {isTodayDay ? 'Today' : format(day, 'MMM d')}
-                </span>
-              </div>
+
+                <g transform="translate(0, 80)">
+                  <text 
+                    textAnchor="middle" 
+                    className={cn(
+                      "fill-[#2c241a] font-['Homemade_Apple'] text-[12px] transition-all",
+                      isSelected ? "text-[14px] opacity-100" : "opacity-60"
+                    )}
+                  >
+                    {format(day, 'EEE MMM d')}
+                  </text>
+                </g>
+              </g>
             );
           })}
+        </svg>
+
+        {/* Overdue Section */}
+        {assignments.filter(a => isBefore(parseISO(a.dueDate), today) && a.status !== 'completed').length > 0 && (
+          <WantedPoster 
+            count={assignments.filter(a => isBefore(parseISO(a.dueDate), today) && a.status !== 'completed').length}
+            onClick={onOverdueSelect}
+            active={isOverdueSelected}
+          />
+        )}
+      </motion.div>
+    </div>
+  );
+}
+
+function AddTrialForm({ onAdd, onClose }: { onAdd: (a: any) => Promise<void>, onClose: () => void }) {
+  const [subject, setSubject] = useState('');
+  const [topic1, setTopic1] = useState('');
+  const [topic2, setTopic2] = useState('');
+  const [topic3, setTopic3] = useState('');
+  const [dueDate, setDueDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onAdd({ 
+        subject, 
+        topics: [topic1, topic2, topic3].filter(t => t.trim() !== ''),
+        dueDate: new Date(dueDate + 'T12:00:00').toISOString()
+      });
+    } catch (err: any) {
+      setError(err.message || "Failed to add trial.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="p-8 space-y-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-amber-100 text-amber-600 rounded-2xl">
+            <Flame size={24} />
+          </div>
+          <h3 className="text-2xl font-black text-slate-900">New Trial</h3>
+        </div>
+        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-900"><X size={24} /></button>
+      </div>
+
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-sm font-bold flex items-center gap-2">
+          <AlertTriangle size={16} />
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Subject</label>
+          <input required placeholder="e.g. Math, English" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={subject} onChange={e => setSubject(e.target.value)} />
+        </div>
+        
+        <div className="space-y-1">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Date of Trial</label>
+          <input type="date" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Topics (3 Required)</label>
+          <input required placeholder="Topic 1" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={topic1} onChange={e => setTopic1(e.target.value)} />
+          <input required placeholder="Topic 2" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={topic2} onChange={e => setTopic2(e.target.value)} />
+          <input required placeholder="Topic 3" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={topic3} onChange={e => setTopic3(e.target.value)} />
         </div>
       </div>
-    </div>
+
+      <button 
+        type="submit" 
+        disabled={isSubmitting}
+        className="w-full py-4 bg-amber-500 text-white rounded-2xl font-bold shadow-xl shadow-amber-200 flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+        {isSubmitting && <Loader2 className="animate-spin" size={20} />}
+        {isSubmitting ? 'Preparing Trial...' : 'Create Trial'}
+      </button>
+    </form>
   );
 }
 

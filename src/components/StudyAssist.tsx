@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { GoogleGenAI, Type } from "@google/genai";
-import { BookOpen, Search, Sparkles, Loader2, ExternalLink, ChevronRight, X, CheckCircle2 } from 'lucide-react';
+import { BookOpen, Search, Sparkles, Loader2, ExternalLink, ChevronRight, X, CheckCircle2, Eye, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from '../firebase';
 import { collection, addDoc, serverTimestamp, query, where, orderBy, getDocs, deleteDoc, updateDoc, doc } from 'firebase/firestore';
@@ -28,6 +28,8 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
   const [generatingScroll, setGeneratingScroll] = useState(false);
   const [data, setData] = useState<StudyData | null>(null);
   const [scrollCreated, setScrollCreated] = useState(false);
+  const [viewScroll, setViewScroll] = useState(false);
+  const [createdScrollUrl, setCreatedScrollUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
   
@@ -35,6 +37,9 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
   useEffect(() => {
     setData(null);
     setError(null);
+    setScrollCreated(false);
+    setViewScroll(false);
+    setCreatedScrollUrl(null);
     setActiveTab('current');
     if (topic) {
       fetchStudyHelp();
@@ -76,32 +81,6 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
 
       const ai = new GoogleGenAI({ apiKey });
       
-      // Check daily limit for scroll creation (Mountain Time)
-      const now = new Date();
-      const mtDate = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Denver',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).format(now);
-
-      const userDoc = await getDocs(query(collection(db, 'users'), where('uid', '==', studentId)));
-      if (!userDoc.empty) {
-        const userData = userDoc.docs[0].data();
-        if (userData.lastScrollCreatedAt) {
-          const lastDate = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'America/Denver',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit'
-          }).format(new Date(userData.lastScrollCreatedAt));
-
-          if (lastDate === mtDate) {
-            throw new Error("You have already created a scroll today! Your limit resets at midnight Mountain Time.");
-          }
-        }
-      }
-
       const prompt = `You are the AI engine for StudyQuest360 (Project: studyquest360-979db).
       Create an educational scroll about "${topic}". 
       Context: ${data.explanation}. 
@@ -113,7 +92,7 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
 
       console.log("StudyAssist: Generating scroll for topic:", topic);
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash-image",
+        model: "gemini-2.5-flash-image",
         contents: prompt,
         config: {
           imageConfig: {
@@ -139,6 +118,7 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
 
       // Compress image before saving
       const imageUrl = await compressImage(rawImageUrl);
+      setCreatedScrollUrl(imageUrl);
       
       const uid = studentId || auth.currentUser?.uid;
       await addDoc(collection(db, 'scrolls'), {
@@ -220,7 +200,7 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
       3. keyTopics: An array of 5 key factual points or vocabulary words related to the subject. These should be strictly educational and NOT framed by the student's interests.
       4. interestingFacts: An array of 2-3 surprising or cool facts about the subject.
 
-      Return ONLY a JSON object. Do not include any markdown formatting like \`\`\`json.`;
+      Return ONLY a JSON object with keys: explanation, analogy, keyTopics, interestingFacts.`;
 
       console.log("StudyAssist: Fetching help for topic:", topic);
       
@@ -229,20 +209,10 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
         contents: prompt,
         config: {
           responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              explanation: { type: Type.STRING },
-              analogy: { type: Type.STRING },
-              keyTopics: { type: Type.ARRAY, items: { type: Type.STRING } },
-              interestingFacts: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ["explanation", "analogy", "keyTopics", "interestingFacts"]
-          }
         }
       });
       
-      const rawText = response.text || '';
+      const rawText = response.text;
       console.log("StudyAssist: Raw AI response:", rawText);
 
       if (!rawText) {
@@ -319,68 +289,54 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
     <div className="bg-white rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl p-8 h-full flex flex-col relative overflow-hidden">
       <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-5 pointer-events-none" />
       
-      <div className="flex items-center justify-between mb-8 relative z-10">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-[#8b5cf6] rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-[#7c3aed]">
-            <Sparkles size={24} />
-          </div>
-          <div>
-            <h3 className="text-xl font-black text-[#4a3f35] uppercase tracking-tight">Study Assist</h3>
-            <div className="flex items-center gap-2 mt-1">
-              <button 
-                onClick={() => setActiveTab('current')}
-                className={cn(
-                  "text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md transition-all",
-                  activeTab === 'current' ? "bg-[#8b5cf6] text-white" : "text-[#8c7b68] hover:text-[#4a3f35]"
-                )}
-              >
-                Current
-              </button>
-              <button 
-                onClick={() => setActiveTab('history')}
-                className={cn(
-                  "text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md transition-all",
-                  activeTab === 'history' ? "bg-[#8b5cf6] text-white" : "text-[#8c7b68] hover:text-[#4a3f35]"
-                )}
-              >
-                History ({history.length})
-              </button>
-            </div>
-          </div>
-        </div>
+      <div className="flex items-center justify-end mb-8 relative z-10">
         <div className="flex items-center gap-3">
-          {activeTab === 'current' && topic && (
+          {topic && (
             <button 
               onClick={fetchStudyHelp}
               disabled={loading}
-              className="px-6 py-2.5 bg-[#8b5cf6] text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-[#7c3aed] transition-all shadow-lg border-2 border-[#7c3aed] flex items-center gap-2 disabled:opacity-50"
+              className="px-8 py-3 bg-[#8b5cf6] text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-[#7c3aed] transition-all shadow-lg border-2 border-[#7c3aed] flex items-center gap-2 disabled:opacity-50"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : data ? 'Refresh' : 'Start Study'}
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : data ? 'Refresh Wisdom' : 'Consult Oracle'}
             </button>
           )}
         </div>
       </div>
 
       <AnimatePresence mode="wait">
-        {activeTab === 'history' ? (
+        {viewScroll && createdScrollUrl ? (
           <motion.div 
-            key="history"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="flex-1 overflow-y-auto space-y-4 pr-2 relative z-10"
+            key="scroll-view"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="flex-1 flex flex-col items-center justify-center space-y-6 relative z-10"
           >
-            {history.length > 0 ? history.map((item, idx) => (
-              <div key={item.id || idx} className="p-6 bg-[#fdf6e3]/50 border-2 border-[#e6d5b8] rounded-2xl space-y-3 hover:border-[#8b5cf6] transition-all group cursor-pointer" onClick={() => { setData(item); setActiveTab('current'); }}>
-                <div className="flex items-center justify-between">
-                  <h4 className="text-lg font-black text-[#4a3f35]">{item.topic}</h4>
-                  <ChevronRight size={16} className="text-[#8c7b68] group-hover:translate-x-1 transition-transform" />
-                </div>
-                <p className="text-sm text-[#8c7b68] font-medium line-clamp-2">{item.explanation}</p>
-              </div>
-            )) : (
-              <div className="py-12 text-center text-[#8c7b68] italic font-medium">No study history yet.</div>
-            )}
+            <div className="relative group">
+              <img 
+                src={createdScrollUrl} 
+                alt="Educational Scroll" 
+                className="max-h-[60vh] rounded-2xl shadow-2xl border-4 border-[#e6d5b8] transform rotate-1 group-hover:rotate-0 transition-transform duration-500"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl pointer-events-none" />
+            </div>
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => setViewScroll(false)}
+                className="px-8 py-3 bg-white border-2 border-[#e6d5b8] text-[#8c7b68] rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-[#fdf6e3] transition-all shadow-md"
+              >
+                Back to Oracle
+              </button>
+              <a 
+                href={createdScrollUrl} 
+                download={`${topic}_scroll.png`}
+                className="px-8 py-3 bg-[#8b5cf6] text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-[#7c3aed] transition-all shadow-md flex items-center gap-2"
+              >
+                <Download size={18} />
+                Download
+              </a>
+            </div>
           </motion.div>
         ) : !topic && !data ? (
           <motion.div 
@@ -420,14 +376,25 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
               <div className="bg-white p-6 rounded-[2rem] border-2 border-[#e6d5b8] shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-xs font-black text-[#8c7b68] uppercase tracking-widest">The Lesson</h4>
-                  <button 
-                    onClick={generateInfographic}
-                    disabled={generatingScroll || scrollCreated}
-                    className="flex items-center gap-2 px-4 py-2 bg-[#8b5cf6] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#7c3aed] transition-all disabled:opacity-50 shadow-md"
-                  >
-                    {generatingScroll ? <Loader2 size={12} className="animate-spin" /> : scrollCreated ? <CheckCircle2 size={12} /> : <Sparkles size={12} />}
-                    {scrollCreated ? 'Scroll Created!' : 'Create Scroll'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {scrollCreated && (
+                      <button 
+                        onClick={() => setViewScroll(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-md"
+                      >
+                        <Eye size={12} />
+                        View Scroll
+                      </button>
+                    )}
+                    <button 
+                      onClick={generateInfographic}
+                      disabled={generatingScroll || scrollCreated}
+                      className="flex items-center gap-2 px-4 py-2 bg-[#8b5cf6] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#7c3aed] transition-all disabled:opacity-50 shadow-md"
+                    >
+                      {generatingScroll ? <Loader2 size={12} className="animate-spin" /> : scrollCreated ? <CheckCircle2 size={12} /> : <Sparkles size={12} />}
+                      {scrollCreated ? 'Scroll Created!' : 'Create Scroll'}
+                    </button>
+                  </div>
                 </div>
                 <p className="text-[#4a3f35] font-medium leading-relaxed text-lg">{data.explanation}</p>
               </div>

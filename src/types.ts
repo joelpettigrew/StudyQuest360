@@ -105,6 +105,34 @@ export interface AnswerBank {
   createdAt: string;
 }
 
+export interface Trial {
+  id: string;
+  studentId: string;
+  subject: string;
+  topics: string[];
+  dueDate: string;
+  status: AssignmentStatus;
+  createdAt: string;
+}
+
+export interface GlobalTopic {
+  id: string;
+  subject: string;
+  topic: string;
+  grade: string;
+  concepts: {
+    term: string;
+    definition: string;
+  }[];
+  questions: {
+    question: string;
+    correctAnswer: string;
+    distractors: string[];
+  }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const XP_PER_LEVEL = 1000;
 
 export function calculateLevel(xp: number) {

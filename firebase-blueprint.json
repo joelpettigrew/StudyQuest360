@@ -102,6 +102,35 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["studentId", "topic", "summary"]
+    },
+    "Trial": {
+      "title": "Trial",
+      "description": "A test covering multiple topics.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "subject": { "type": "string" },
+        "topics": { "type": "array", "items": { "type": "string" } },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "subject", "topics", "dueDate"]
+    },
+    "GlobalTopic": {
+      "title": "Global Topic",
+      "description": "Shared educational content across all students.",
+      "type": "object",
+      "properties": {
+        "subject": { "type": "string" },
+        "topic": { "type": "string" },
+        "grade": { "type": "string" },
+        "concepts": { "type": "array", "items": { "type": "object" } },
+        "questions": { "type": "array", "items": { "type": "object" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["subject", "topic", "grade"]
     }
   },
   "firestore": {
@@ -132,6 +161,14 @@
     "/connections/{connectionId}": {
       "schema": "Connection",
       "description": "Links between students and parents."
+    },
+    "/trials/{trialId}": {
+      "schema": "Trial",
+      "description": "Student trials (tests)."
+    },
+    "/global_topics/{topicId}": {
+      "schema": "GlobalTopic",
+      "description": "Global educational content."
     }
   }
 }
