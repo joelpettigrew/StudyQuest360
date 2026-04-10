@@ -50,17 +50,55 @@ export default function TrainingModule({ assignment, user, onClose }: TrainingMo
   const fetchAnswerBank = async () => {
     setLoading(true);
     try {
-      const q = query(
-        collection(db, 'answer_banks'),
-        where('assignmentId', '==', assignment.id)
-      );
-      const snapshot = await getDocs(q);
-      if (!snapshot.empty) {
-        const bank = { ...snapshot.docs[0].data(), id: snapshot.docs[0].id } as AnswerBank;
-        setAnswerBank(bank);
-        prepareQuiz(bank);
+      // If it's a trial training, we might have multiple topics separated by commas
+      const topics = assignment.topic.split(',');
+      
+      if (assignment.id === 'trial-training' || topics.length > 1) {
+        // Fetch all answer banks for these topics
+        const allBanks: AnswerBank[] = [];
+        for (const topic of topics) {
+          const q = query(
+            collection(db, 'answer_banks'),
+            where('studentId', '==', user.uid),
+            where('topic', '==', topic.trim())
+          );
+          const snapshot = await getDocs(q);
+          if (!snapshot.empty) {
+            allBanks.push({ ...snapshot.docs[0].data(), id: snapshot.docs[0].id } as AnswerBank);
+          }
+        }
+
+        if (allBanks.length > 0) {
+          // Merge banks
+          const mergedBank: AnswerBank = {
+            id: 'merged-trial-bank',
+            studentId: user.uid,
+            assignmentId: 'trial-training',
+            topic: assignment.topic,
+            subject: assignment.subject,
+            concepts: allBanks.flatMap(b => b.concepts),
+            relationships: [],
+            questions: allBanks.flatMap(b => b.questions),
+            createdAt: new Date().toISOString()
+          };
+          setAnswerBank(mergedBank);
+          prepareQuiz(mergedBank);
+        } else {
+          setAnswerBank(null);
+        }
       } else {
-        setAnswerBank(null);
+        const q = query(
+          collection(db, 'answer_banks'),
+          where('assignmentId', '==', assignment.id)
+        );
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          const bank = { ...snapshot.docs[0].data(), id: snapshot.docs[0].id } as AnswerBank;
+          setAnswerBank(bank);
+          prepareQuiz(bank);
+        } else {
+          setAnswerBank(null);
+        }
       }
     } catch (error) {
       console.error("Error fetching answer bank:", error);

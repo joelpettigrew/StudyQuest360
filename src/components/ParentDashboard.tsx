@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Settings as SettingsIcon, Shield, Clock, TrendingUp, Plus, Trash2, Gamepad2, LogOut, X, Calendar, Sparkles, Wand2, ExternalLink, Loader2, AlertTriangle, CheckCircle2, AlertCircle } from 'lucide-react';
 import { db, doc, onSnapshot, setDoc, updateDoc, collection, query, where, auth, signOut, getDoc, handleFirestoreError, OperationType, addDoc, serverTimestamp, deleteDoc } from '../firebase';
-import { UserProfile, ParentSettings, Assignment, Priority } from '../types';
+import { UserProfile, ParentSettings, Assignment, Priority, Trial } from '../types';
 import { cn } from '../lib/utils';
 import { format, subDays, isSameDay, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -18,6 +18,7 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
   const [settings, setSettings] = useState<ParentSettings | null>(null);
   const [newBlockedTopic, setNewBlockedTopic] = useState('');
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [trials, setTrials] = useState<Trial[]>([]);
   const [studentIdInput, setStudentIdInput] = useState('');
   const [isLinking, setIsLinking] = useState(false);
   const [linkStatus, setLinkStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
@@ -60,12 +61,23 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
     }
 
     const aq = query(collection(db, 'assignments'), where('studentId', 'in', studentIds));
-    const unsubscribe = onSnapshot(aq, (snapshot) => {
+    const unsubscribeAssignments = onSnapshot(aq, (snapshot) => {
       setAssignments(snapshot.docs.map(doc => doc.data() as Assignment));
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'assignments');
     });
-    return () => unsubscribe();
+
+    const tq = query(collection(db, 'trials'), where('studentId', 'in', studentIds));
+    const unsubscribeTrials = onSnapshot(tq, (snapshot) => {
+      setTrials(snapshot.docs.map(doc => doc.data() as Trial));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'trials');
+    });
+
+    return () => {
+      unsubscribeAssignments();
+      unsubscribeTrials();
+    };
   }, [students]);
 
   useEffect(() => {
@@ -92,7 +104,7 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
     try {
       // Check if current user is actually a parent in the DB
       if (user.role !== 'parent' && user.role !== 'admin') {
-        setLinkStatus({ type: 'error', message: "Your account is not set up as a Parent. Please reset your role and select 'Parent' first." });
+        setLinkStatus({ type: 'error', message: "Your account is not set up as a Guardian. Please reset your role and select 'Guardian' first." });
         return;
       }
 
@@ -105,7 +117,7 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
 
       const studentData = studentDoc.data() as UserProfile;
       if (studentData.role === 'parent' || studentData.role === 'admin') {
-        setLinkStatus({ type: 'error', message: "This ID belongs to a parent or admin. You can only link to student accounts." });
+        setLinkStatus({ type: 'error', message: "This ID belongs to a guardian or admin. You can only link to student accounts." });
         return;
       }
 
@@ -125,7 +137,7 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
       
       // Provide more specific feedback for debugging
       if (error.code === 'permission-denied' || error.message?.includes('permission-denied')) {
-        msg = "Permission denied by database. Please ensure you have selected the 'Parent' role in your profile.";
+        msg = "Permission denied by database. Please ensure you have selected the 'Guardian' role in your profile.";
       } else if (error.code === 'unavailable') {
         msg = "Network error. Please check your connection and try again.";
       } else if (error.message) {
@@ -172,27 +184,41 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
   const getStudentChartData = (studentId: string) => {
     const data = [];
     const studentAssignments = assignments.filter(a => a.studentId === studentId);
+    const studentTrials = trials.filter(t => t.studentId === studentId);
     
     for (let i = 13; i >= 0; i--) {
       const date = subDays(startOfDay(new Date()), i);
       
-      const created = studentAssignments.filter(a => {
+      const questsCreated = studentAssignments.filter(a => {
         if (!a.createdAt) return false;
-        // Handle both Firestore Timestamp and ISO string
         const createdDate = (a.createdAt as any).toDate ? (a.createdAt as any).toDate() : new Date(a.createdAt as any);
         return isSameDay(createdDate, date);
       }).length;
 
-      const completed = studentAssignments.filter(a => {
+      const questsCompleted = studentAssignments.filter(a => {
         if (!a.completedAt) return false;
         const completedDate = (a.completedAt as any).toDate ? (a.completedAt as any).toDate() : new Date(a.completedAt as any);
         return isSameDay(completedDate, date);
       }).length;
 
+      const trialsCreated = studentTrials.filter(t => {
+        if (!t.createdAt) return false;
+        const createdDate = (t.createdAt as any).toDate ? (t.createdAt as any).toDate() : new Date(t.createdAt as any);
+        return isSameDay(createdDate, date);
+      }).length;
+
+      const trialsCompleted = studentTrials.filter(t => {
+        if (!t.completedAt) return false;
+        const completedDate = (t.completedAt as any).toDate ? (t.completedAt as any).toDate() : new Date(t.completedAt as any);
+        return isSameDay(completedDate, date);
+      }).length;
+
       data.push({
         date: format(date, 'MMM dd'),
-        created,
-        completed
+        questsCreated,
+        questsCompleted,
+        trialsCreated,
+        trialsCompleted
       });
     }
     return data;
@@ -204,7 +230,7 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
         <div className="flex-1">
           <div className="flex items-center justify-between w-full md:w-auto">
             <div>
-              <h2 className="text-3xl font-black text-slate-900 mb-2">Parent Command Center 🛡️</h2>
+              <h2 className="text-3xl font-black text-slate-900 mb-2">Guardian Command Center 🛡️</h2>
               <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Monitoring progress and managing safety.</p>
             </div>
             <button 
@@ -226,14 +252,14 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
             <div className="bg-white p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm">
               <div className="flex items-center gap-3 text-brand-600 mb-2">
                 <Shield size={20} />
-                <span className="font-black uppercase tracking-widest text-[10px]">Your Parent ID</span>
+                <span className="font-black uppercase tracking-widest text-[10px]">Your Guardian ID</span>
               </div>
               <p 
                 className="text-sm font-mono font-bold text-brand-900 select-all cursor-pointer flex items-center gap-2 group" 
                 title="Click to copy"
                 onClick={() => {
                   navigator.clipboard.writeText(user.uid);
-                  alert("Parent ID copied to clipboard!");
+                  alert("Guardian ID copied to clipboard!");
                 }}
               >
                 {user.uid}
@@ -263,7 +289,7 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                 </button>
                 <button 
                   onClick={async () => {
-                    if (window.confirm("This will reset your account role and take you back to the onboarding screen. Your data will remain, but you'll need to re-select 'Parent'. Continue?")) {
+                    if (window.confirm("This will reset your account role and take you back to the onboarding screen. Your data will remain, but you'll need to re-select 'Guardian'. Continue?")) {
                       try {
                         await updateDoc(doc(db, 'users', user.uid), { role: '' });
                         window.location.reload();
@@ -371,6 +397,21 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                     <Plus size={16} />
                     Add Quest
                   </button>
+                  <button 
+                    onClick={async () => {
+                      if (window.confirm("Are you sure you want to unlink this student?")) {
+                        try {
+                          await deleteDoc(doc(db, 'connections', `${user.uid}_${student.uid}`));
+                        } catch (e) {
+                          alert("Failed to unlink student.");
+                        }
+                      }
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white border-2 border-rose-200 text-rose-500 rounded-xl font-bold hover:bg-rose-50 transition-all text-sm"
+                  >
+                    <Trash2 size={16} />
+                    Unlink Student
+                  </button>
                 </div>
               </div>
 
@@ -386,13 +427,21 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={getStudentChartData(student.uid)}>
                       <defs>
-                        <linearGradient id={`colorCreated-${student.uid}`} x1="0" y1="0" x2="0" y2="1">
+                        <linearGradient id={`colorQuestsCreated-${student.uid}`} x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
                           <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
                         </linearGradient>
-                        <linearGradient id={`colorCompleted-${student.uid}`} x1="0" y1="0" x2="0" y2="1">
+                        <linearGradient id={`colorQuestsCompleted-${student.uid}`} x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
                           <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id={`colorTrialsCreated-${student.uid}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id={`colorTrialsCompleted-${student.uid}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -425,21 +474,39 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                       />
                       <Area 
                         type="monotone" 
-                        dataKey="created" 
+                        dataKey="questsCreated" 
                         name="Quests Created"
                         stroke="#8b5cf6" 
                         strokeWidth={3}
                         fillOpacity={1} 
-                        fill={`url(#colorCreated-${student.uid})`} 
+                        fill={`url(#colorQuestsCreated-${student.uid})`} 
                       />
                       <Area 
                         type="monotone" 
-                        dataKey="completed" 
+                        dataKey="questsCompleted" 
                         name="Quests Done"
                         stroke="#10b981" 
                         strokeWidth={3}
                         fillOpacity={1} 
-                        fill={`url(#colorCompleted-${student.uid})`} 
+                        fill={`url(#colorQuestsCompleted-${student.uid})`} 
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="trialsCreated" 
+                        name="Trials Started"
+                        stroke="#f59e0b" 
+                        strokeWidth={3}
+                        fillOpacity={1} 
+                        fill={`url(#colorTrialsCreated-${student.uid})`} 
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="trialsCompleted" 
+                        name="Trials Done"
+                        stroke="#ef4444" 
+                        strokeWidth={3}
+                        fillOpacity={1} 
+                        fill={`url(#colorTrialsCompleted-${student.uid})`} 
                       />
                     </AreaChart>
                   </ResponsiveContainer>

@@ -166,6 +166,7 @@ function StudyQuestApp() {
   const [selectedTopic, setSelectedTopic] = useState<string>('');
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [isStudyAssistOpen, setIsStudyAssistOpen] = useState(false);
+  const [isLinkGuardianOpen, setIsLinkGuardianOpen] = useState(false);
   const [isTrainingOpen, setIsTrainingOpen] = useState(false);
   const [trainingAssignment, setTrainingAssignment] = useState<Assignment | null>(null);
   const [scrolls, setScrolls] = useState<Scroll[]>([]);
@@ -208,13 +209,13 @@ function StudyQuestApp() {
       };
       
       const docRef = await addDoc(collection(db, 'trials'), trialData);
-      
-      // Process each topic for global database and answer bank
-      for (const topic of data.topics) {
-        await processTopicForGlobalDB(topic, data.subject, targetUser.grade || '9th Grade', targetUser.uid);
-      }
-      
       setIsAddTrialModalOpen(false);
+      
+      // Process each topic for global database and answer bank in background
+      Promise.all(data.topics.map((topic: string) => 
+        processTopicForGlobalDB(topic, data.subject, targetUser.grade || '9th Grade', targetUser.uid)
+      )).catch(err => console.error("Background topic processing failed:", err));
+      
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'trials');
     }
@@ -611,7 +612,13 @@ function StudyQuestApp() {
   const handleToggleTrialComplete = async (trial: Trial) => {
     try {
       const newStatus = trial.status === 'completed' ? 'not-started' : 'completed';
-      await updateDoc(doc(db, 'trials', trial.id), { status: newStatus });
+      const updateData: any = { status: newStatus };
+      if (newStatus === 'completed') {
+        updateData.completedAt = new Date().toISOString();
+      } else {
+        updateData.completedAt = null;
+      }
+      await updateDoc(doc(db, 'trials', trial.id), updateData);
       
       if (newStatus === 'completed') {
         const targetUser = impersonatedStudent || user;
@@ -847,7 +854,7 @@ function StudyQuestApp() {
 
   const activeUser = impersonatedStudent || user;
   const isStudentView = activeUser?.role === 'student' || (isAdminUser && (adminView === 'student' || adminView === 'admin'));
-  const isParentView = user.role === 'parent' || (isAdminUser && adminView === 'parent');
+  const isGuardianView = user.role === 'parent' || (isAdminUser && adminView === 'parent');
 
   // Student Onboarding & Linking Logic
   if (isStudentView && !impersonatedStudent && !isAdminUser) {
@@ -864,9 +871,9 @@ function StudyQuestApp() {
               <Users size={40} />
             </div>
             <div className="space-y-4">
-              <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tight">Parent Link Required</h2>
+              <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tight">Guardian Link Required</h2>
               <p className="text-xl text-slate-500 font-medium leading-relaxed">
-                To begin your adventure, you need to link your account with a parent. 
+                To begin your adventure, you need to link your account with a guardian. 
                 Share your ID with them, or enter their ID below.
               </p>
             </div>
@@ -884,12 +891,12 @@ function StudyQuestApp() {
               </div>
 
               <div className="pt-6 border-t border-slate-200">
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Enter Parent ID</p>
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Enter Guardian ID</p>
                 <div className="flex gap-2">
                   <input 
                     id="parent-id-input"
                     type="text" 
-                    placeholder="Paste Parent ID here..." 
+                    placeholder="Paste Guardian ID here..." 
                     className="flex-1 px-4 py-4 bg-white border-2 border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:border-brand-500 transition-all shadow-inner"
                   />
                   <button 
@@ -901,12 +908,12 @@ function StudyQuestApp() {
                           // Check if parent exists and is a parent
                           const parentDoc = await getDoc(doc(db, 'users', pid));
                           if (!parentDoc.exists()) {
-                            setGlobalError("Parent ID not found. Please check the ID and try again.");
+                            setGlobalError("Guardian ID not found. Please check the ID and try again.");
                             return;
                           }
                           const parentData = parentDoc.data() as UserProfile;
                           if (parentData.role !== 'parent' && parentData.role !== 'admin') {
-                            setGlobalError("This ID does not belong to a parent account.");
+                            setGlobalError("This ID does not belong to a guardian account.");
                             return;
                           }
 
@@ -979,7 +986,7 @@ function StudyQuestApp() {
                   className="group p-6 bg-white border-4 border-[#e6d5b8] rounded-3xl hover:border-amber-500 hover:bg-amber-50 transition-all text-left space-y-2 relative overflow-hidden"
                 >
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-black text-slate-900 group-hover:text-amber-600 transition-colors">I am a Parent</h3>
+                    <h3 className="text-xl font-black text-slate-900 group-hover:text-amber-600 transition-colors">I am a Guardian</h3>
                     <ArrowRight className="text-slate-300 group-hover:text-amber-500 transition-all group-hover:translate-x-1" />
                   </div>
                   <p className="text-sm text-slate-500 font-medium">Manage quests, monitor progress, and ensure safety.</p>
@@ -987,7 +994,7 @@ function StudyQuestApp() {
               </div>
 
               <div className="pt-8 border-t-2 border-slate-100">
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Have a Parent Link Code?</p>
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Have a Guardian Link Code?</p>
                 <div className="flex gap-2">
                   <input 
                     id="parent-link-code"
@@ -1031,7 +1038,7 @@ function StudyQuestApp() {
             }}
             className="px-4 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs font-black uppercase tracking-widest transition-colors"
           >
-            {isAdminUser ? 'Back to Admin' : 'Back to Parent Dashboard'}
+            {isAdminUser ? 'Back to Admin' : 'Back to Guardian Dashboard'}
           </button>
         </div>
       )}
@@ -1197,37 +1204,37 @@ function StudyQuestApp() {
           </div>
         ) : (
           <div className="p-4 md:p-8 lg:p-12 space-y-8 font-serif">
-            <header className="bg-[#fdf6e3] p-8 rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl relative overflow-hidden z-40 mb-12">
+            <header className="bg-[#fdf6e3] p-4 rounded-[2rem] border-4 border-[#e6d5b8] shadow-2xl relative overflow-hidden z-40 mb-4">
               <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-20 pointer-events-none" />
               
-              <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+              <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 {/* Left Section: Welcome & Level */}
-                <div className="flex items-center gap-6 flex-1">
+                <div className="flex items-center gap-4 flex-1">
                   <div className="relative">
-                    <div className="w-20 h-20 bg-gradient-to-br from-[#8b5cf6] to-[#7c3aed] rounded-[2rem] flex items-center justify-center text-white shadow-2xl border-4 border-white/30 transform -rotate-3 hover:rotate-0 transition-transform duration-500">
-                      <Trophy size={40} className="drop-shadow-lg" />
+                    <div className="w-14 h-14 bg-gradient-to-br from-[#8b5cf6] to-[#7c3aed] rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-white/30 transform -rotate-3 hover:rotate-0 transition-transform duration-500">
+                      <Trophy size={28} className="drop-shadow-lg" />
                     </div>
-                    <div className="absolute -bottom-2 -right-2 bg-amber-400 text-[#4a3f35] w-10 h-10 rounded-full border-4 border-white flex items-center justify-center font-black text-lg shadow-lg">
+                    <div className="absolute -bottom-1 -right-1 bg-amber-400 text-[#4a3f35] w-7 h-7 rounded-full border-2 border-white flex items-center justify-center font-black text-xs shadow-md">
                       {activeUser.level}
                     </div>
                   </div>
                   
                   <div>
-                    <h2 className="text-3xl font-black text-[#4a3f35] tracking-tight leading-tight">
+                    <h2 className="text-xl font-black text-[#4a3f35] tracking-tight leading-tight">
                       Welcome, <span className="text-[#8b5cf6]">{activeUser.displayName}</span>!
                     </h2>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="px-3 py-1 bg-[#8b5cf6]/10 text-[#8b5cf6] rounded-full text-[10px] font-black uppercase tracking-widest border border-[#8b5cf6]/20">
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="px-2 py-0.5 bg-[#8b5cf6]/10 text-[#8b5cf6] rounded-full text-[8px] font-black uppercase tracking-widest border border-[#8b5cf6]/20">
                         {getLevelTitle(activeUser.level)}
                       </span>
-                      <div className="w-48 h-3 bg-[#e6d5b8] rounded-full overflow-hidden border border-[#d4c4a8] shadow-inner">
+                      <div className="w-32 h-2 bg-[#e6d5b8] rounded-full overflow-hidden border border-[#d4c4a8] shadow-inner">
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${calculateProgress(activeUser.xp)}%` }}
                           className="h-full bg-gradient-to-r from-[#8b5cf6] via-[#a855f7] to-[#8b5cf6] bg-[length:200%_100%] animate-shimmer"
                         />
                       </div>
-                      <span className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">
+                      <span className="text-[8px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">
                         {activeUser.xp % XP_PER_LEVEL}/{XP_PER_LEVEL} XP
                       </span>
                     </div>
@@ -1235,14 +1242,14 @@ function StudyQuestApp() {
                 </div>
 
                 {/* Right Section: Controls & Stats */}
-                <div className="flex flex-wrap items-center gap-4 lg:gap-6 justify-end">
+                <div className="flex flex-wrap items-center gap-3 lg:gap-4 justify-end">
                   {/* Grade Selector */}
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest font-sans ml-1">Current Grade</span>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[8px] font-black text-[#8c7b68] uppercase tracking-widest font-sans ml-1">Grade</span>
                     <select 
                       value={activeUser.grade || ''} 
                       onChange={(e) => handleUpdateGrade(e.target.value)}
-                      className="text-sm font-black text-[#4a3f35] bg-white px-4 py-3 rounded-2xl border-2 border-[#e6d5b8] outline-none focus:ring-4 focus:ring-[#8b5cf6]/20 transition-all shadow-sm font-sans min-w-[160px] appearance-none cursor-pointer hover:border-[#8b5cf6]"
+                      className="text-xs font-black text-[#4a3f35] bg-white px-3 py-2 rounded-xl border-2 border-[#e6d5b8] outline-none focus:ring-2 focus:ring-[#8b5cf6]/20 transition-all shadow-sm font-sans min-w-[140px] appearance-none cursor-pointer hover:border-[#8b5cf6]"
                     >
                       <option value="">Select Grade</option>
                       {['Kindergarten', '1st Grade', '2nd Grade', '3rd Grade', '4th Grade', '5th Grade', '6th Grade', '7th Grade', '8th Grade', '9th Grade', '10th Grade', '11th Grade', '12th Grade'].map(g => (
@@ -1252,31 +1259,40 @@ function StudyQuestApp() {
                   </div>
 
                   {/* Quest Keys */}
-                  <div className="flex items-center gap-4 px-6 py-3 bg-white border-2 border-[#e6d5b8] rounded-[2rem] shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3 px-4 py-2 bg-white border-2 border-[#e6d5b8] rounded-2xl shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex flex-col items-end">
-                      <span className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">Quest Keys</span>
-                      <span className="text-2xl font-black text-[#4a3f35] leading-none">{activeUser.tries || 0}</span>
+                      <span className="text-[8px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">Keys</span>
+                      <span className="text-lg font-black text-[#4a3f35] leading-none">{activeUser.tries || 0}</span>
                     </div>
-                    <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center border-2 border-amber-200 shadow-inner group">
-                      <Key size={24} className="text-amber-500 group-hover:rotate-12 transition-transform" />
+                    <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center border border-amber-200 shadow-inner group">
+                      <Key size={16} className="text-amber-500 group-hover:rotate-12 transition-transform" />
                     </div>
                   </div>
+
+                  {/* Add Guardian Button */}
+                  <button 
+                    onClick={() => setIsLinkGuardianOpen(true)}
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-white text-[#8c7b68] rounded-2xl font-black text-sm hover:bg-[#fdf6e3] hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-slate-200 border-2 border-[#e6d5b8] font-sans group"
+                  >
+                    <Users size={18} className="group-hover:scale-110 transition-transform" />
+                    <span>Add Guardian</span>
+                  </button>
 
                   {/* New Trial Button */}
                   <button 
                     onClick={() => setIsAddTrialModalOpen(true)}
-                    className="flex items-center justify-center gap-3 px-8 py-4 bg-amber-500 text-white rounded-[2rem] font-black text-lg hover:bg-amber-600 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-amber-500/30 border-2 border-amber-600 font-sans group min-w-[200px]"
+                    className="flex items-center justify-center gap-2 px-6 py-3 bg-amber-500 text-white rounded-2xl font-black text-sm hover:bg-amber-600 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-amber-500/30 border-2 border-amber-600 font-sans group min-w-[140px]"
                   >
-                    <Flame size={24} className="group-hover:animate-pulse" />
+                    <Flame size={18} className="group-hover:animate-pulse" />
                     <span>New Trial</span>
                   </button>
 
                   {/* New Quest Button */}
                   <button 
                     onClick={() => setIsAddModalOpen(true)}
-                    className="flex items-center justify-center gap-3 px-8 py-4 bg-[#8b5cf6] text-white rounded-[2rem] font-black text-lg hover:bg-[#7c3aed] hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-[#8b5cf6]/30 border-2 border-[#7c3aed] font-sans group min-w-[200px]"
+                    className="flex items-center justify-center gap-2 px-6 py-3 bg-[#8b5cf6] text-white rounded-2xl font-black text-sm hover:bg-[#7c3aed] hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-[#8b5cf6]/30 border-2 border-[#7c3aed] font-sans group min-w-[140px]"
                   >
-                    <Plus size={24} className="group-hover:rotate-90 transition-transform" />
+                    <Plus size={18} className="group-hover:rotate-90 transition-transform" />
                     <span>New Quest</span>
                   </button>
                 </div>
@@ -1471,7 +1487,7 @@ function StudyQuestApp() {
         )}
 
         {isStudyAssistOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10">
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 md:p-10">
             <motion.div 
               initial={{ opacity: 0 }} 
               animate={{ opacity: 1 }} 
@@ -1509,6 +1525,61 @@ function StudyQuestApp() {
                   studentId={activeUser.uid}
                   history={studyHistory}
                 />
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {isLinkGuardianOpen && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsLinkGuardianOpen(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-md bg-white rounded-[2.5rem] border-4 border-[#e6d5b8] shadow-2xl p-8 space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Add Guardian</h3>
+                <button onClick={() => setIsLinkGuardianOpen(false)} className="text-slate-400 hover:text-slate-900"><X size={24} /></button>
+              </div>
+              <div className="space-y-4">
+                <p className="text-sm text-slate-500 font-medium">Enter another guardian's ID to link them to your account.</p>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Guardian ID</label>
+                  <input 
+                    id="extra-guardian-id"
+                    type="text" 
+                    placeholder="Paste Guardian ID here..." 
+                    className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold focus:outline-none focus:border-brand-500 transition-all"
+                  />
+                </div>
+                <button 
+                  onClick={async () => {
+                    const pid = (document.getElementById('extra-guardian-id') as HTMLInputElement).value.trim();
+                    if (pid) {
+                      try {
+                        const parentDoc = await getDoc(doc(db, 'users', pid));
+                        if (!parentDoc.exists()) {
+                          alert("Guardian ID not found!");
+                          return;
+                        }
+                        const parentData = parentDoc.data() as UserProfile;
+                        if (parentData.role !== 'parent' && parentData.role !== 'admin') {
+                          alert("This ID does not belong to a guardian account.");
+                          return;
+                        }
+                        await setDoc(doc(db, 'connections', `${pid}_${user.uid}`), {
+                          studentId: user.uid,
+                          parentId: pid,
+                          createdAt: new Date().toISOString()
+                        });
+                        setIsLinkGuardianOpen(false);
+                        alert("Guardian added successfully!");
+                      } catch (e) {
+                        alert("Failed to link guardian.");
+                      }
+                    }
+                  }}
+                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg"
+                >
+                  Link Guardian
+                </button>
               </div>
             </motion.div>
           </div>
@@ -1664,7 +1735,7 @@ function StudyQuestApp() {
                         parentId: '', // Required by interface
                         title: `Trial Training: ${selectedTrial.subject}`,
                         subject: selectedTrial.subject,
-                        topic: selectedTrial.topics.join(', '),
+                        topic: selectedTrial.topics.join(','), // Use comma separated for TrainingModule to detect
                         dueDate: selectedTrial.dueDate,
                         priority: 'high',
                         status: 'not-started',
@@ -2044,15 +2115,15 @@ function RoleSelection({ user, onSelect }: { user: UserProfile, onSelect: (role:
                 </div>
                 
                 <div>
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-2">Parent Link Code (Optional)</label>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-2">Guardian Link Code (Optional)</label>
                   <input 
                     type="text" 
-                    placeholder="Enter your parent's link code" 
+                    placeholder="Enter your guardian's link code" 
                     className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-2 focus:ring-brand-500 outline-none"
                     value={parentId}
                     onChange={(e) => setParentId(e.target.value)}
                   />
-                  <p className="mt-2 text-xs text-slate-400 font-medium">Ask your parent for their code in their dashboard.</p>
+                  <p className="mt-2 text-xs text-slate-400 font-medium">Ask your guardian for their code in their dashboard.</p>
                 </div>
               </div>
             </motion.div>
@@ -2323,7 +2394,7 @@ function AdminControlPanel({ currentView, setView, onReset }: { currentView: str
         )}
       >
         <Users size={14} />
-        <span className="hidden sm:inline">Parent</span>
+        <span className="hidden sm:inline">Guardian</span>
       </button>
       <button 
         onClick={() => setView('student')}
@@ -2720,31 +2791,21 @@ function AssignmentTimeline({
 
   const backgroundElements = useMemo(() => {
     const images = [mountains, forest1, mountains2, forest2, lake, lake2, lakeandtrees, mountains3];
-    // Shuffle images
-    const shuffled = [...images].sort(() => Math.random() - 0.5);
+    const randomImage = images[Math.floor(Math.random() * images.length)];
     
-    // Quadrants: Top-Left, Top-Right, Bottom-Left, Bottom-Right
-    // viewBox is 1200x650. Header is top 100px.
-    // Quadrant size: 600x275
-    const quads = [
-      { x: 0, y: 100, w: 600, h: 275 },
-      { x: 600, y: 100, w: 600, h: 275 },
-      { x: 100, y: 375, w: 500, h: 275 }, // Moved right (closer to middle)
-      { x: 600, y: 375, w: 500, h: 275 }  // Moved left (closer to middle)
-    ];
+    // viewBox is 1200x650. Center is 600, 325.
+    // Original size was approx 600x275. 300% increase means 1800x825.
+    const imgW = 1800;
+    const imgH = 825;
 
-    return quads.map((q, i) => {
-      const imgW = q.w * 0.96;
-      const imgH = q.h * 0.96;
-      return {
-        src: shuffled[i],
-        x: q.x + (q.w - imgW) / 2,
-        y: q.y + (q.h - imgH) / 2,
-        w: imgW,
-        h: imgH,
-        quadId: i
-      };
-    });
+    return [{
+      src: randomImage,
+      x: 600 - imgW / 2,
+      y: 325 - imgH / 2,
+      w: imgW,
+      h: imgH,
+      quadId: 0
+    }];
   }, []);
 
   const svgPath = useMemo(() => {

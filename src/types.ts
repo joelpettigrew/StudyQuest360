@@ -113,6 +113,7 @@ export interface Trial {
   dueDate: string;
   status: AssignmentStatus;
   createdAt: string;
+  completedAt?: string | null;
 }
 
 export interface GlobalTopic {
