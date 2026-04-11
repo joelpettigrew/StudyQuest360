@@ -1,0 +1,47 @@
+{
+  "sessionId": "1",
+  "shaderCode": "vec3 p=u_cameraPosition; vec2 uv=FC.xy*2.-r; float roll=u_cameraRoll; mat2 m=mat2(cos(roll),-sin(roll),sin(roll),cos(roll)); uv=m*uv; vec3 v=vec3(uv/slider_zoom,r.y); v=rotate3D(u_cameraRotation.y,vec3(0,1,0))*v; vec3 cr=normalize(cross(vec3(0,1,0),v)); v=rotate3D(u_cameraRotation.x,cr)*v; vec3 rd=normalize(v); float d,l; for(l=0.;l<100.;l++){ vec3 q=p; d = 10.0 - length(q.xy); float zS = 15.0; float zM = mod(q.z, zS) - zS*0.5; float zI = floor(q.z/zS); vec3 oP = vec3(sin(zI*1.23)*5., cos(zI*0.87)*5., 0.); vec3 qO = q - vec3(oP.xy, 0.); float scrollBody = length(qO.xy) - 1.5; float scrollEnds = length(qO.xy) - 1.8; scrollEnds = max(scrollEnds, abs(zM) - 2.0); scrollEnds = max(scrollEnds, 1.8 - abs(zM)); scrollBody = max(scrollBody, abs(zM) - 1.8); float oD = min(scrollBody, scrollEnds); d = min(d, oD); float cS = 150.0; float cM = mod(q.z, cS) - cS*0.5; float cD = abs(length(q.xy) - 3.0) - 0.2; cD = max(cD, abs(cM) - 0.5); d = min(d, cD); if(d<0.001 || length(p-u_cameraPosition)>200.) break; p += rd*d; } o.rgb = vec3(0.9, 0.8, 0.6) * (1.0 - l/100.0); if(d<0.01) { float cS = 150.0; float cM = mod(p.z, cS) - cS*0.5; if (abs(cM) < 1.0 && abs(length(p.xy)-3.0) < 1.0) { o.rgb = vec3(1.0, 0.8, 0.2); } else { float zS = 15.0; float zM = mod(p.z, zS) - zS*0.5; if (abs(zM) > 1.8) o.rgb = vec3(0.4, 0.2, 0.1); else o.rgb = vec3(0.95, 0.9, 0.8); } float grid = smoothstep(0.48, 0.5, abs(fract(p.z*0.2)-0.5)) + smoothstep(0.48, 0.5, abs(fract(atan(p.y,p.x)*3.18)-0.5)); o.rgb *= (1.0 - grid * 0.1); } o.rgb = mix(o.rgb, vec3(0.8, 0.7, 0.5), 1.0 - exp(-length(p-u_cameraPosition)*0.01)); o.rgb *= slider_brightness;",
+  "sliders": [
+    {
+      "name": "Zoom",
+      "variableName": "slider_zoom",
+      "min": 1,
+      "max": 5,
+      "step": 0.1,
+      "defaultValue": 2.0
+    },
+    {
+      "name": "Brightness",
+      "variableName": "slider_brightness",
+      "min": 0.5,
+      "max": 3,
+      "step": 0.1,
+      "defaultValue": 1.5
+    }
+  ],
+  "uniforms": {
+    "slider_zoom": 2.0,
+    "slider_brightness": 1.5
+  },
+  "cameraControlsEnabled": true,
+  "controlConfig": {
+    "forwardVelocity": 0.5,
+    "strafeVelocity": 0.4,
+    "ascendVelocity": 0.4,
+    "pitchVelocity": 0.4,
+    "yawVelocity": 0.4
+  },
+  "soundConfig": {
+    "enabled": false
+  },
+  "shipConfig": {
+    "generalScale": 0.5,
+    "chaseDistance": 8.0
+  },
+  "canvasSize": "100%",
+  "viewMode": "chase",
+  "isHdEnabled": false,
+  "isHudEnabled": true,
+  "collisionThresholdRed": 0.05,
+  "collisionThresholdYellow": 0.5
+}

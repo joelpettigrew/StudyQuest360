@@ -1,0 +1,5 @@
+{
+  "name": "Studyquest",
+  "description": "An educational flight quest. Fly through checkpoints and answer questions to earn points.",
+  "requestFramePermissions": []
+}

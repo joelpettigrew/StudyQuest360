@@ -107,7 +107,7 @@ export function ConceptMatchGame({ tries, onTryUsed, onScore, isLockedOut, paren
         }];
       });
       
-      if (bankConcepts.length >= 2) { 
+      if (bankConcepts.length >= 1) { 
         gameConcepts = bankConcepts;
       }
     } else {
@@ -359,7 +359,7 @@ export function GravityMatchGame({ tries, onTryUsed, onScore, isLockedOut, paren
           words: keptConcepts.map(c => c.term)
         }];
       });
-      if (bankConcepts.length >= 4) {
+      if (bankConcepts.length >= 1) {
         gameConcepts = bankConcepts;
       }
     } else {

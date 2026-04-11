@@ -61,11 +61,16 @@ export function TargetPracticeGame({ tries, onTryUsed, onScore, isLockedOut, par
     });
 
     answerBanks.forEach(bank => {
-      bank.questions.forEach(q => {
+      const keptConcepts = bank.concepts.filter(c => c.status === 'kept');
+      keptConcepts.forEach(concept => {
         allQuestions.push({
-          text: q.question,
-          correctAnswer: q.correctAnswer,
-          distractors: q.distractors
+          text: concept.definition,
+          correctAnswer: concept.term,
+          distractors: keptConcepts
+            .filter(c => c.term !== concept.term)
+            .map(c => c.term)
+            .sort(() => Math.random() - 0.5)
+            .slice(0, 5)
         });
       });
     });
@@ -118,45 +123,78 @@ export function TargetPracticeGame({ tries, onTryUsed, onScore, isLockedOut, par
     const questionBoxHeight = 160; // Approx height of the bottom question box
     const archerWidth = 180; // Width of the archer silhouette area
 
-    setTargets(prev => prev.map(t => {
-      let nx = t.x + t.vx;
-      let ny = t.y + t.vy;
-      let nvx = t.vx;
-      let nvy = t.vy;
+    setTargets(prev => {
+      const newTargets = prev.map(t => {
+        let nx = t.x + t.vx;
+        let ny = t.y + t.vy;
+        let nvx = t.vx;
+        let nvy = t.vy;
 
-      // Bounce off walls with UI restrictions
-      // Left wall (avoid archer at the bottom left)
-      const minX = (ny > height - questionBoxHeight) ? archerWidth : 0;
-      if (nx - t.radius < minX) {
-        nvx *= -1;
-        nx = minX + t.radius;
-      } else if (nx + t.radius > width) {
-        nvx *= -1;
-        nx = width - t.radius;
+        // Bounce off walls with UI restrictions
+        const minX = (ny > height - questionBoxHeight) ? archerWidth : 0;
+        if (nx - t.radius < minX) {
+          nvx *= -1;
+          nx = minX + t.radius;
+        } else if (nx + t.radius > width) {
+          nvx *= -1;
+          nx = width - t.radius;
+        }
+
+        const minY = headerHeight;
+        const maxY = height - questionBoxHeight;
+
+        if (ny - t.radius < minY) {
+          nvy *= -1;
+          ny = minY + t.radius;
+        } else if (ny + t.radius > maxY) {
+          nvy *= -1;
+          ny = maxY - t.radius;
+        }
+
+        // Apply friction/slowing
+        nvx *= 0.995;
+        nvy *= 0.995;
+
+        // Minimum speed
+        if (Math.abs(nvx) < 0.2) nvx = (Math.random() - 0.5) * 2;
+        if (Math.abs(nvy) < 0.2) nvy = (Math.random() - 0.5) * 2;
+
+        return { ...t, x: nx, y: ny, vx: nvx, vy: nvy };
+      });
+
+      // Target-to-target collision (bouncing)
+      for (let i = 0; i < newTargets.length; i++) {
+        for (let j = i + 1; j < newTargets.length; j++) {
+          const t1 = newTargets[i];
+          const t2 = newTargets[j];
+          const dx = t2.x - t1.x;
+          const dy = t2.y - t1.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const minDistance = t1.radius + t2.radius;
+
+          if (distance < minDistance) {
+            // Collision detected - resolve overlap
+            const overlap = minDistance - distance;
+            const nx = dx / distance;
+            const ny = dy / distance;
+            
+            newTargets[i].x -= nx * overlap / 2;
+            newTargets[i].y -= ny * overlap / 2;
+            newTargets[j].x += nx * overlap / 2;
+            newTargets[j].y += ny * overlap / 2;
+
+            // Elastic collision (exchange velocities along normal)
+            const p = (t1.vx * nx + t1.vy * ny - t2.vx * nx - t2.vy * ny);
+            newTargets[i].vx -= p * nx;
+            newTargets[i].vy -= p * ny;
+            newTargets[j].vx += p * nx;
+            newTargets[j].vy += p * ny;
+          }
+        }
       }
 
-      // Top/Bottom walls
-      const minY = headerHeight;
-      const maxY = height - questionBoxHeight;
-
-      if (ny - t.radius < minY) {
-        nvy *= -1;
-        ny = minY + t.radius;
-      } else if (ny + t.radius > maxY) {
-        nvy *= -1;
-        ny = maxY - t.radius;
-      }
-
-      // Apply friction/slowing
-      nvx *= 0.995;
-      nvy *= 0.995;
-
-      // Minimum speed
-      if (Math.abs(nvx) < 0.2) nvx = (Math.random() - 0.5) * 2;
-      if (Math.abs(nvy) < 0.2) nvy = (Math.random() - 0.5) * 2;
-
-      return { ...t, x: nx, y: ny, vx: nvx, vy: nvy };
-    }));
+      return newTargets;
+    });
 
     requestRef.current = requestAnimationFrame(updatePhysics);
   }, []);

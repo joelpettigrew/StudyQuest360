@@ -136,6 +136,7 @@ import StudyAssist from './components/StudyAssist';
 import TrainingModule from './components/TrainingModule';
 import { ConceptMatchGame, GravityMatchGame, QuestRunGame } from './components/Game';
 import { TargetPracticeGame } from './components/TargetPractice';
+import { SpacePortalGame } from './components/SpacePortalGame';
 import LandingPage from './components/LandingPage';
 import ParentDashboard from './components/ParentDashboard';
 import AdminDashboard from './components/AdminDashboard';
@@ -1809,6 +1810,7 @@ function StudyQuestApp() {
 
 function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onScore, sessions = [], parentSettings }: { user: UserProfile, assignments: Assignment[], answerBanks: AnswerBank[], isLockedOut: boolean, onTryUsed: () => void, onScore: (gameId: string, score: number) => void, sessions?: any[], parentSettings: ParentSettings | null }) {
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
+  const [briefingGame, setBriefingGame] = useState<string | null>(null);
 
   useEffect(() => {
     if (parentSettings?.activeGameId) {
@@ -1820,7 +1822,8 @@ function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onSc
     { id: 'concept-match', title: 'Concept Match', description: 'Match 4 concepts to score points.', icon: <Gamepad2 size={24} />, color: 'bg-[#8b5cf6]' },
     { id: 'gravity-match', title: 'Gravity Drop', description: 'Physics-based concept matching with falling shapes!', icon: <Sparkles size={24} />, color: 'bg-[#f59e0b]' },
     { id: 'questrun', title: 'Quest Run', description: 'Run, jump, and answer questions in this fast-paced arena!', icon: <Zap size={24} />, color: 'bg-[#3b82f6]' },
-    { id: 'target-practice', title: 'Target Practice', description: 'Aim and shoot at the correct answers!', icon: <Target size={24} />, color: 'bg-[#ef4444]' }
+    { id: 'target-practice', title: 'Target Practice', description: 'Aim and shoot at the correct answers!', icon: <Target size={24} />, color: 'bg-[#ef4444]' },
+    { id: 'space-portal', title: 'Space Portal', description: 'Fly through portals and answer questions in deep space!', icon: <Compass size={24} />, color: 'bg-[#1e293b]' }
   ];
 
   const last14Days = eachDayOfInterval({
@@ -1845,9 +1848,30 @@ function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onSc
       'Concept Match': daySessions.filter(s => s.gameId === 'concept-match').length,
       'Gravity Drop': daySessions.filter(s => s.gameId === 'gravity-match').length,
       'Quest Run': daySessions.filter(s => s.gameId === 'questrun').length,
-      'Target Practice': daySessions.filter(s => s.gameId === 'target-practice').length
+      'Target Practice': daySessions.filter(s => s.gameId === 'target-practice').length,
+      'Space Portal': daySessions.filter(s => s.gameId === 'space-portal').length
     };
   });
+
+  if (selectedGame === 'space-portal') {
+    return (
+      <div className="space-y-6">
+        <button onClick={() => setSelectedGame(null)} className="flex items-center gap-2 text-slate-500 font-bold hover:text-slate-900 transition-all">
+          <ChevronRight size={20} className="rotate-180" /> Back to Games
+        </button>
+        <SpacePortalGame 
+          tries={user.tries} 
+          isLockedOut={isLockedOut}
+          parentSettings={parentSettings}
+          onTryUsed={onTryUsed}
+          onScore={(score) => onScore('space-portal', score)}
+          assignments={assignments}
+          answerBanks={answerBanks}
+          user={user}
+        />
+      </div>
+    );
+  }
 
   if (selectedGame === 'questrun') {
     return (
@@ -1932,108 +1956,234 @@ function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onSc
   }
 
   return (
-    <div className="space-y-12 font-serif">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div className="space-y-8 font-serif pb-20">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h2 className="text-4xl font-black text-[#4a3f35] mb-2">The Arena</h2>
-          <p className="text-[#8c7b68] font-medium font-sans">Use your keys to battle concepts and earn XP!</p>
+          <h2 className="text-5xl font-black text-[#4a3f35] mb-2 tracking-tighter uppercase italic">The Arena</h2>
+          <p className="text-[#8c7b68] font-medium font-sans text-lg">Master your subjects through high-stakes challenges.</p>
         </div>
-        <div className="flex items-center gap-4 px-6 py-3 bg-[#fdf6e3] border-2 border-[#e6d5b8] rounded-2xl shadow-sm">
-          <Trophy className="text-amber-500" size={24} />
-          <div>
-            <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">Total XP</p>
-            <p className="text-xl font-black text-[#4a3f35]">{user.xp}</p>
+        <div className="flex gap-4">
+          <div className="px-6 py-4 bg-[#fdf6e3] border-4 border-[#e6d5b8] rounded-3xl shadow-xl flex items-center gap-4">
+            <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center border-2 border-amber-200">
+              <Key size={28} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">Quest Keys</p>
+              <p className="text-3xl font-black text-[#4a3f35] leading-none">{user.tries || 0}</p>
+            </div>
+          </div>
+          <div className="px-6 py-4 bg-[#fdf6e3] border-4 border-[#e6d5b8] rounded-3xl shadow-xl flex items-center gap-4">
+            <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center border-2 border-purple-200">
+              <Trophy size={28} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">Total XP</p>
+              <p className="text-3xl font-black text-[#4a3f35] leading-none">{user.xp}</p>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-[#fdf6e3] p-8 rounded-[2.5rem] border-4 border-[#e6d5b8] shadow-lg relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-20 pointer-events-none" />
-        
-        <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-6">
-            <h3 className="text-2xl font-black text-[#4a3f35] flex items-center gap-2">
-              <Gamepad2 className="text-[#8b5cf6]" /> Choose Your Battle
-            </h3>
-            
-            <div className="relative">
-              <select 
-                value={selectedGame || ''}
-                onChange={(e) => setSelectedGame(e.target.value || null)}
-                className="w-full appearance-none bg-white border-2 border-[#e6d5b8] text-[#4a3f35] font-bold text-lg py-4 pl-6 pr-12 rounded-2xl focus:outline-none focus:ring-4 focus:ring-[#8b5cf6]/20 focus:border-[#8b5cf6] transition-all shadow-sm font-sans"
-              >
-                <option value="">Select a game...</option>
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Games Selection - Left 2 Columns */}
+        <div className="lg:col-span-2 space-y-8">
+          <div className="bg-[#fdf6e3] p-8 rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-10 pointer-events-none" />
+            <div className="relative z-10">
+              <h3 className="text-2xl font-black text-[#4a3f35] mb-8 flex items-center gap-3">
+                <Gamepad2 className="text-[#8b5cf6]" size={32} /> 
+                <span className="uppercase tracking-tight">Available Missions</span>
+              </h3>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 {games.map(game => (
-                  <option key={game.id} value={game.id}>{game.title}</option>
+                  <button
+                    key={game.id}
+                    onClick={() => setBriefingGame(game.id)}
+                    className="group relative bg-white border-4 border-[#e6d5b8] rounded-[2.5rem] p-6 text-left transition-all hover:border-[#8b5cf6] hover:shadow-2xl hover:-translate-y-2 active:scale-95 overflow-hidden"
+                  >
+                    <div className={cn("absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 rounded-full opacity-10 transition-transform group-hover:scale-150", game.color)} />
+                    <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg mb-6 transition-transform group-hover:rotate-6", game.color)}>
+                      {React.cloneElement(game.icon as React.ReactElement<any>, { size: 32 })}
+                    </div>
+                    <h4 className="text-2xl font-black text-[#4a3f35] mb-2 uppercase tracking-tight">{game.title}</h4>
+                    <p className="text-sm text-[#8c7b68] font-medium font-sans line-clamp-2 mb-4">{game.description}</p>
+                    <div className="flex items-center justify-between mt-auto">
+                      <span className="text-[10px] font-black text-[#8b5cf6] uppercase tracking-widest bg-[#8b5cf6]/10 px-3 py-1 rounded-full border border-[#8b5cf6]/20">
+                        1 Key / Play
+                      </span>
+                      <div className="w-10 h-10 bg-[#fdf6e3] rounded-full flex items-center justify-center border-2 border-[#e6d5b8] group-hover:bg-[#8b5cf6] group-hover:border-[#8b5cf6] group-hover:text-white transition-colors">
+                        <ChevronRight size={20} />
+                      </div>
+                    </div>
+                  </button>
                 ))}
-              </select>
-              <ChevronRight size={24} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#8c7b68] rotate-90 pointer-events-none" />
-            </div>
-
-            <div className="flex items-center gap-4 p-4 bg-white/50 rounded-2xl border border-[#e6d5b8]">
-              <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center border border-amber-200">
-                <Key size={24} />
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">Quest Keys Available</p>
-                <p className="text-2xl font-black text-[#4a3f35]">{user.tries || 0}</p>
               </div>
             </div>
           </div>
 
-          <div className="space-y-6">
-            <h3 className="text-2xl font-black text-[#4a3f35] flex items-center gap-2">
-              <Trophy className="text-amber-500" /> High Scores
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {games.map(game => (
-                <div key={game.id} className="bg-white/80 border-2 border-[#e6d5b8] rounded-2xl p-4 flex items-center justify-between shadow-sm backdrop-blur-sm hover:border-[#8b5cf6] transition-all group">
-                  <div className="flex items-center gap-3">
-                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-md transition-transform group-hover:scale-110", game.color)}>
-                      {game.icon}
+          {/* Activity Chart */}
+          <div className="bg-[#fdf6e3] p-8 rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-10 pointer-events-none" />
+            <div className="relative z-10">
+              <h3 className="text-2xl font-black text-[#4a3f35] mb-8 flex items-center gap-3">
+                <BarChart3 className="text-[#8b5cf6]" size={32} /> 
+                <span className="uppercase tracking-tight">Battle History</span>
+              </h3>
+              <div className="h-[300px] w-full bg-white/40 rounded-[2rem] p-6 border-2 border-[#e6d5b8] backdrop-blur-sm">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e6d5b8" />
+                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#8c7b68', fontFamily: 'sans-serif' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#8c7b68', fontFamily: 'sans-serif' }} />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '1.5rem', border: '4px solid #e6d5b8', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', backgroundColor: '#fdf6e3', fontFamily: 'sans-serif' }}
+                      cursor={{ fill: '#fdf6e3', opacity: 0.5 }}
+                    />
+                    <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontWeight: 700, fontFamily: 'sans-serif', color: '#4a3f35' }} />
+                    {games.map(game => (
+                      <Bar key={game.id} dataKey={game.title} stackId="a" fill={game.color.match(/#([a-f0-9]{6})/i)?.[0] || '#8b5cf6'} radius={[4, 4, 0, 0]} />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* High Scores - Right Column */}
+        <div className="space-y-8">
+          <div className="bg-[#fdf6e3] p-8 rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl relative overflow-hidden h-full">
+            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-10 pointer-events-none" />
+            <div className="relative z-10">
+              <h3 className="text-2xl font-black text-[#4a3f35] mb-8 flex items-center gap-3">
+                <Trophy className="text-amber-500" size={32} /> 
+                <span className="uppercase tracking-tight">Hall of Fame</span>
+              </h3>
+              
+              <div className="space-y-4">
+                {games.map(game => (
+                  <div key={game.id} className="bg-white border-4 border-[#e6d5b8] rounded-[2rem] p-5 flex items-center justify-between shadow-md hover:border-[#8b5cf6] transition-all group">
+                    <div className="flex items-center gap-4">
+                      <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg transition-transform group-hover:scale-110", game.color)}>
+                        {game.icon}
+                      </div>
+                      <div>
+                        <p className="font-black text-[#4a3f35] uppercase tracking-tight leading-none mb-1">{game.title}</p>
+                        <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">Personal Best</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-bold text-[#4a3f35] text-sm font-sans">{game.title}</p>
-                      <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">Best Score</p>
+                    <div className="text-right">
+                      <p className="text-3xl font-black text-[#8b5cf6] leading-none">{user.highScores?.[game.id] || 0}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xl font-black text-[#8b5cf6] font-sans">{user.highScores?.[game.id] || 0}</p>
+                ))}
+              </div>
+
+              {/* Stats Summary */}
+              <div className="mt-12 p-6 bg-white/50 rounded-[2rem] border-2 border-[#e6d5b8] space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-black text-[#8c7b68] uppercase tracking-widest">Total Missions</span>
+                  <span className="text-lg font-black text-[#4a3f35]">{sessions.length}</span>
+                </div>
+                <div className="w-full h-[2px] bg-[#e6d5b8]/50" />
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-black text-[#8c7b68] uppercase tracking-widest">Avg Score</span>
+                  <span className="text-lg font-black text-[#4a3f35]">
+                    {sessions.length > 0 ? Math.round(sessions.reduce((acc, s) => acc + (s.score || 0), 0) / sessions.length) : 0}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Mission Briefing Modal */}
+      {briefingGame && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-[#fdf6e3] border-8 border-[#e6d5b8] rounded-[3rem] shadow-2xl max-w-2xl w-full overflow-hidden relative"
+          >
+            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-10 pointer-events-none" />
+            
+            {/* Briefing Header */}
+            <div className={cn("p-8 text-white relative", games.find(g => g.id === briefingGame)?.color)}>
+              <button 
+                onClick={() => setBriefingGame(null)}
+                className="absolute top-6 right-6 w-10 h-10 bg-black/20 hover:bg-black/40 rounded-full flex items-center justify-center transition-colors"
+              >
+                <span className="text-2xl">×</span>
+              </button>
+              <div className="flex items-center gap-6">
+                <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-3xl flex items-center justify-center border-2 border-white/30">
+                  {React.cloneElement(games.find(g => g.id === briefingGame)?.icon as React.ReactElement<any>, { size: 40 })}
+                </div>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.3em] opacity-80 mb-1">Mission Briefing</p>
+                  <h3 className="text-4xl font-black uppercase tracking-tight italic">{games.find(g => g.id === briefingGame)?.title}</h3>
+                </div>
+              </div>
+            </div>
+
+            {/* Briefing Content */}
+            <div className="p-10 space-y-8 relative z-10">
+              <div className="space-y-4">
+                <h4 className="text-xl font-black text-[#4a3f35] uppercase tracking-tight flex items-center gap-2">
+                  <span className="w-2 h-8 bg-[#8b5cf6] rounded-full" />
+                  Objective
+                </h4>
+                <p className="text-[#8c7b68] text-lg font-medium font-sans leading-relaxed">
+                  {games.find(g => g.id === briefingGame)?.description}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="p-6 bg-white border-4 border-[#e6d5b8] rounded-[2rem]">
+                  <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest mb-2 font-sans">Mission Cost</p>
+                  <div className="flex items-center gap-3">
+                    <Key className="text-amber-500" size={24} />
+                    <span className="text-2xl font-black text-[#4a3f35]">1 Key</span>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+                <div className="p-6 bg-white border-4 border-[#e6d5b8] rounded-[2rem]">
+                  <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest mb-2 font-sans">Personal Best</p>
+                  <div className="flex items-center gap-3">
+                    <Trophy className="text-amber-500" size={24} />
+                    <span className="text-2xl font-black text-[#4a3f35]">{user.highScores?.[briefingGame] || 0}</span>
+                  </div>
+                </div>
+              </div>
 
-      <div className="bg-[#fdf6e3] p-8 rounded-[2.5rem] border-4 border-[#e6d5b8] shadow-lg relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-20 pointer-events-none" />
-        
-        <div className="relative z-10">
-          <h3 className="text-2xl font-black text-[#4a3f35] mb-6 flex items-center gap-2">
-            <BarChart3 className="text-[#8b5cf6]" /> Game Activity (Last 14 Days)
-          </h3>
-          <div className="h-[300px] w-full bg-white/50 rounded-2xl p-4 border-2 border-[#e6d5b8]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e6d5b8" />
-                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#8c7b68', fontFamily: 'sans-serif' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#8c7b68', fontFamily: 'sans-serif' }} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '1rem', border: '2px solid #e6d5b8', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', backgroundColor: '#fdf6e3', fontFamily: 'sans-serif' }}
-                  cursor={{ fill: '#fdf6e3', opacity: 0.5 }}
-                />
-                <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontWeight: 700, fontFamily: 'sans-serif', color: '#4a3f35' }} />
-                <Bar dataKey="Concept Match" stackId="a" fill="#8b5cf6" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Gravity Drop" stackId="a" fill="#f59e0b" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Quest Run" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Target Practice" stackId="a" fill="#ef4444" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+              <div className="flex gap-4 pt-4">
+                <button
+                  onClick={() => setBriefingGame(null)}
+                  className="flex-1 py-5 border-4 border-[#e6d5b8] text-[#8c7b68] font-black text-lg rounded-3xl hover:bg-[#e6d5b8]/20 transition-all uppercase tracking-widest"
+                >
+                  Abort
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedGame(briefingGame);
+                    setBriefingGame(null);
+                  }}
+                  className={cn(
+                    "flex-[2] py-5 text-white font-black text-xl rounded-3xl transition-all transform hover:scale-105 active:scale-95 shadow-xl uppercase tracking-widest border-b-8",
+                    games.find(g => g.id === briefingGame)?.color,
+                    "border-black/20"
+                  )}
+                >
+                  Launch Mission
+                </button>
+              </div>
+            </div>
+          </motion.div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -2739,23 +2889,38 @@ function AssignmentTimeline({
     </div>
   );
 
-  const PennantFlag = ({ color, active, count }: { color: string, active: boolean, count: number }) => (
-    <g className={cn("transition-all duration-500", active ? "scale-110" : "")}>
-      <path d="M 0,0 V 60" fill="none" stroke="#5c4033" strokeWidth="3" strokeLinecap="round" />
-      <path d="M -2,0 H 2" fill="none" stroke="#5c4033" strokeWidth="2" />
-      <path 
-        d="M 0,5 L 40,15 L 0,25 Z" 
-        fill={color} 
-        stroke="#2c241a" 
-        strokeWidth="1" 
-        className="opacity-90"
-      />
-      <text x="12" y="18" textAnchor="middle" className="fill-[#2c241a] font-bold text-[12px] pointer-events-none">
-        {count > 0 ? count : ""}
-      </text>
-      <path d="M 40,15 L 45,14 M 40,15 L 44,17" fill="none" stroke="#2c241a" strokeWidth="0.5" />
-    </g>
-  );
+  const PennantFlag = ({ color, active, count }: { color: string, active: boolean, count: number }) => {
+    const isBig = count > 0;
+    const scale = isBig ? (active ? 2.2 : 2) : (active ? 1.1 : 1);
+    return (
+      <g 
+        className="transition-all duration-500" 
+        style={{ 
+          transform: `scale(${scale})`,
+          transformOrigin: '0px 60px'
+        }}
+      >
+        <path d="M 0,0 V 60" fill="none" stroke="#5c4033" strokeWidth={isBig ? 1.5 : 3} strokeLinecap="round" />
+        <path d="M -2,0 H 2" fill="none" stroke="#5c4033" strokeWidth={isBig ? 1 : 2} />
+        <path 
+          d="M 0,5 L 40,15 L 0,25 Z" 
+          fill={color} 
+          stroke="#2c241a" 
+          strokeWidth={isBig ? 0.5 : 1} 
+          className="opacity-90"
+        />
+        <text 
+          x="12" 
+          y="18" 
+          textAnchor="middle" 
+          className={cn("fill-[#2c241a] font-black pointer-events-none", isBig ? "text-[8px]" : "text-[12px]")}
+        >
+          {count > 0 ? count : ""}
+        </text>
+        <path d="M 40,15 L 45,14 M 40,15 L 44,17" fill="none" stroke="#2c241a" strokeWidth={isBig ? 0.25 : 0.5} />
+      </g>
+    );
+  };
 
   const WantedPoster = ({ count, onClick, active }: { count: number, onClick: () => void, active: boolean }) => (
     <motion.div 
