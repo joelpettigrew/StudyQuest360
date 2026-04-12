@@ -1,9 +1,142 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { db } from "../firebase";
-import { collection, addDoc, query, where, getDocs, orderBy, limit, deleteDoc, doc } from "firebase/firestore";
+import { collection, addDoc, query, where, getDocs, orderBy, limit, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { AnswerBank } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+
+export async function generateAIAnswerBankData(topic: string, subject: string, grade: string) {
+  const prompt = `Create an educational answer bank for a ${grade} student studying ${subject}: ${topic}.
+  Return JSON with:
+  1. concepts: array of {term, definition} (8-12 items)
+  2. questions: array of {question, correctAnswer, distractors: string[]} (10-15 items)`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            concepts: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  term: { type: Type.STRING },
+                  definition: { type: Type.STRING }
+                },
+                required: ["term", "definition"]
+              }
+            },
+            questions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  question: { type: Type.STRING },
+                  correctAnswer: { type: Type.STRING },
+                  distractors: { type: Type.ARRAY, items: { type: Type.STRING } }
+                },
+                required: ["question", "correctAnswer", "distractors"]
+              }
+            }
+          },
+          required: ["concepts", "questions"]
+        }
+      }
+    });
+    const text = response.text;
+    if (!text) return null;
+    return JSON.parse(text);
+  } catch (e) {
+    console.error("AI Generation failed", e);
+    return null;
+  }
+}
+
+export async function processTopicForGlobalDB(topic: string, subject: string, grade: string, studentId: string) {
+  try {
+    console.log(`[GlobalDB] Processing ${topic} for ${grade} ${subject}`);
+    // Check global_topics
+    const q = query(
+      collection(db, 'global_topics'),
+      where('subject', '==', subject),
+      where('topic', '==', topic.toLowerCase()),
+      where('grade', '==', grade)
+    );
+    const snapshot = await getDocs(q);
+    
+    let globalData: any;
+    
+    if (snapshot.empty) {
+      // Generate new via AI
+      const aiResponse = await generateAIAnswerBankData(topic, subject, grade);
+      if (aiResponse) {
+        const newGlobalTopic = {
+          subject,
+          topic: topic.toLowerCase(),
+          grade,
+          concepts: aiResponse.concepts,
+          questions: aiResponse.questions,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        const globalDoc = await addDoc(collection(db, 'global_topics'), newGlobalTopic);
+        globalData = { ...newGlobalTopic, id: globalDoc.id };
+      }
+    } else {
+      globalData = { ...snapshot.docs[0].data(), id: snapshot.docs[0].id };
+    }
+
+    if (globalData) {
+      // Populate student's answer bank from global data
+      await addDoc(collection(db, 'answer_banks'), {
+        studentId,
+        assignmentId: 'global_topic',
+        topic,
+        subject,
+        concepts: globalData.concepts.map((c: any) => ({ ...c, status: 'kept' })),
+        relationships: [],
+        questions: globalData.questions,
+        createdAt: new Date().toISOString()
+      });
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error("Error processing global topic:", error);
+    return false;
+  }
+}
+
+export async function createInitialAnswerBanks(studentId: string, grade: string) {
+  // Check if student already has any answer banks to avoid duplicates on re-onboarding
+  try {
+    const q = query(collection(db, 'answer_banks'), where('studentId', '==', studentId));
+    const snapshot = await getDocs(q);
+    if (!snapshot.empty) {
+      console.log(`[InitialBanks] Student ${studentId} already has ${snapshot.size} banks. Skipping initial creation.`);
+      return;
+    }
+  } catch (err) {
+    console.error("Error checking for existing answer banks:", err);
+  }
+
+  const initialTopics = [
+    { subject: 'Math', topic: 'Fundamentals' },
+    { subject: 'Science', topic: 'The Scientific Method' },
+    { subject: 'History', topic: 'World Civilizations' }
+  ];
+
+  console.log(`[InitialBanks] Creating 3 starter banks for ${grade} student ${studentId}`);
+  
+  for (const item of initialTopics) {
+    await processTopicForGlobalDB(item.topic, item.subject, grade, studentId);
+  }
+}
 
 export async function generateAnswerBank(assignmentId: string | null, studentId: string, topic: string, subject: string, grade: string = '9th Grade') {
   console.log(`[AnswerBankService] Starting generation for ${topic} (${subject}) - Student: ${studentId}`);

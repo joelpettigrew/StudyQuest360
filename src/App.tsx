@@ -28,6 +28,7 @@ import {
   Clock,
   LogOut,
   Gamepad2,
+  HelpCircle,
   Shield,
   Loader2,
   User,
@@ -58,7 +59,8 @@ import {
   Tent,
   Mountain,
   Trees,
-  Flag
+  Flag,
+  TrendingUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -100,7 +102,9 @@ import {
   serverTimestamp,
   handleFirestoreError,
   OperationType,
-  getDocs
+  getDocs,
+  orderBy,
+  limit
 } from './firebase';
 import { GoogleGenAI } from "@google/genai";
 import { 
@@ -134,16 +138,19 @@ import mountains3 from './components/mountains3.png';
 // Components
 import StudyAssist from './components/StudyAssist';
 import TrainingModule from './components/TrainingModule';
-import { ConceptMatchGame, GravityMatchGame, QuestRunGame } from './components/Game';
-import { TargetPracticeGame } from './components/TargetPractice';
+import { QuestRunGame } from './components/Game';
+import { QuestSnakeGame } from './components/QuestSnakeGame';
 import { SpacePortalGame } from './components/SpacePortalGame';
 import LandingPage from './components/LandingPage';
 import ParentDashboard from './components/ParentDashboard';
 import AdminDashboard from './components/AdminDashboard';
-import { generateAnswerBank } from './services/answerBankService';
+import { generateAnswerBank, processTopicForGlobalDB, createInitialAnswerBanks } from './services/answerBankService';
 import AnswerBankView from './components/AnswerBankView';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import StudentOnboarding from './components/StudentOnboarding';
+import ParentOnboarding from './components/ParentOnboarding';
+import AvatarSelector, { AvatarIcon } from './components/AvatarSelector';
+import logo from './components/StudyQuest.png';
 
 export default function App() {
   return (
@@ -176,6 +183,7 @@ function StudyQuestApp() {
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
   const [showGame, setShowGame] = useState(false);
   const [showAnswerBank, setShowAnswerBank] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [gameSessions, setGameSessions] = useState<GameSession[]>([]);
   const [studyHistory, setStudyHistory] = useState<StudyHistory[]>([]);
   const [answerBanks, setAnswerBanks] = useState<AnswerBank[]>([]);
@@ -187,6 +195,7 @@ function StudyQuestApp() {
   const [allConnections, setAllConnections] = useState<any[]>([]);
   const [connections, setConnections] = useState<any[]>([]);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
+  const [isAvatarSelectorOpen, setIsAvatarSelectorOpen] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const questBoardRef = React.useRef<HTMLDivElement>(null);
 
@@ -219,84 +228,6 @@ function StudyQuestApp() {
       
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'trials');
-    }
-  };
-
-  const processTopicForGlobalDB = async (topic: string, subject: string, grade: string, studentId: string) => {
-    try {
-      // Check global_topics
-      const q = query(
-        collection(db, 'global_topics'),
-        where('subject', '==', subject),
-        where('topic', '==', topic),
-        where('grade', '==', grade)
-      );
-      const snapshot = await getDocs(q);
-      
-      let globalData: any;
-      
-      if (snapshot.empty) {
-        // Generate new via AI
-        const aiResponse = await generateAIAnswerBankData(topic, subject, grade);
-        if (aiResponse) {
-          const newGlobalTopic = {
-            subject,
-            topic,
-            grade,
-            concepts: aiResponse.concepts,
-            questions: aiResponse.questions,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          };
-          const globalDoc = await addDoc(collection(db, 'global_topics'), newGlobalTopic);
-          globalData = { ...newGlobalTopic, id: globalDoc.id };
-        }
-      } else {
-        globalData = { ...snapshot.docs[0].data(), id: snapshot.docs[0].id };
-      }
-
-      if (globalData) {
-        // Populate student's answer bank from global data
-        await addDoc(collection(db, 'answer_banks'), {
-          studentId,
-          assignmentId: 'trial_topic',
-          topic,
-          subject,
-          concepts: globalData.concepts.map((c: any) => ({ ...c, status: 'kept' })),
-          relationships: [],
-          questions: globalData.questions,
-          createdAt: new Date().toISOString()
-        });
-      }
-    } catch (error) {
-      console.error("Error processing global topic:", error);
-    }
-  };
-
-  const generateAIAnswerBankData = async (topic: string, subject: string, grade: string) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-    
-    const prompt = `Create an educational answer bank for a ${grade} student studying ${subject}: ${topic}.
-    Return JSON with:
-    1. concepts: array of {term, definition} (8-12 items)
-    2. questions: array of {question, correctAnswer, distractors: string[]} (10-15 items)`;
-
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-        }
-      });
-      const text = response.text;
-      if (!text) return null;
-      // Clean markdown if present
-      const jsonStr = text.replace(/```json\n?|\n?```/g, '');
-      return JSON.parse(jsonStr);
-    } catch (e) {
-      console.error("AI Generation failed", e);
-      return null;
     }
   };
 
@@ -390,7 +321,12 @@ function StudyQuestApp() {
       handleFirestoreError(error, OperationType.GET, 'study_history');
     });
 
-    const qAnswerBanks = query(collection(db, 'answer_banks'), where('studentId', '==', targetUid));
+    const qAnswerBanks = query(
+      collection(db, 'answer_banks'), 
+      where('studentId', '==', targetUid),
+      orderBy('createdAt', 'desc'),
+      limit(10)
+    );
     const unsubscribeAnswerBanks = onSnapshot(qAnswerBanks, (snapshot) => {
       setAnswerBanks(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as AnswerBank)));
     }, (error) => {
@@ -512,7 +448,7 @@ function StudyQuestApp() {
       longestStreak: 0,
       tries: 5, // Give 5 initial tries (Keys)
       lastCompletedDate: null,
-      onboarded: true
+      onboarded: false // Modal will show next
     };
 
     if (parentId) {
@@ -540,6 +476,25 @@ function StudyQuestApp() {
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
       throw error;
+    }
+  };
+
+  const handleOnboardingComplete = async (grade?: string) => {
+    if (!user) return;
+    try {
+      const updates: any = { onboarded: true };
+      if (grade) {
+        updates.grade = grade;
+      }
+      await updateDoc(doc(db, 'users', user.uid), updates);
+      
+      if (user.role === 'student' && grade) {
+        // Create initial answer banks for student
+        createInitialAnswerBanks(user.uid, grade).catch(err => console.error("Initial bank creation failed:", err));
+      }
+      setShowTutorial(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
     }
   };
 
@@ -850,7 +805,7 @@ function StudyQuestApp() {
   }
 
   if (!user) {
-    return <LandingPage onLogin={handleLogin} isLoggingIn={isLoggingIn} onShowPrivacy={() => setShowPrivacyPolicy(true)} />;
+    return <LandingPage onLogin={handleLogin} isLoggingIn={isLoggingIn} />;
   }
 
   const activeUser = impersonatedStudent || user;
@@ -940,13 +895,16 @@ function StudyQuestApp() {
             <button onClick={handleLogout} className="text-slate-400 hover:text-rose-500 font-bold transition-colors">
               Sign Out
             </button>
+            <button 
+              onClick={() => setShowTutorial(true)} 
+              className="absolute bottom-8 right-8 p-3 text-slate-400 hover:text-brand-500 transition-all"
+              title="Help & Tutorial"
+            >
+              <HelpCircle size={24} />
+            </button>
           </motion.div>
         </div>
       );
-    }
-
-    if (!user.onboarded) {
-      return <StudentOnboarding onComplete={() => updateDoc(doc(db, 'users', user.uid), { onboarded: true })} />;
     }
   }
 
@@ -1017,6 +975,13 @@ function StudyQuestApp() {
               </div>
             </div>
           </div>
+          <button 
+            onClick={() => setShowTutorial(true)} 
+            className="absolute bottom-8 right-8 p-3 text-slate-400 hover:text-brand-500 transition-all"
+            title="Help & Tutorial"
+          >
+            <HelpCircle size={24} />
+          </button>
         </motion.div>
       </div>
     );
@@ -1026,6 +991,17 @@ function StudyQuestApp() {
 
   return (
     <div className="h-screen bg-slate-50 font-sans selection:bg-brand-100 selection:text-brand-900 flex flex-col">
+      {/* Onboarding Overlay */}
+      {(showTutorial || !user.onboarded) && user.role && (
+        <div className="fixed inset-0 z-[100]">
+          {(user.role === 'student' || (isAdminUser && adminView === 'student')) ? (
+            <StudentOnboarding onComplete={(grade) => handleOnboardingComplete(grade)} />
+          ) : (user.role === 'parent' || user.role === 'admin') ? (
+            <ParentOnboarding onComplete={() => handleOnboardingComplete()} />
+          ) : null}
+        </div>
+      )}
+
       {impersonatedStudent && (
         <div className="bg-brand-600 text-white px-6 py-2 flex items-center justify-between sticky top-0 z-[60] shadow-md flex-shrink-0">
           <div className="flex items-center gap-2 text-sm font-bold">
@@ -1056,24 +1032,47 @@ function StudyQuestApp() {
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
 
       {/* Mobile Header */}
-        <header className="md:hidden flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200 sticky top-0 z-50 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <Trophy className="text-brand-500" size={24} />
-            <span className="text-base font-black tracking-tighter uppercase">studyquest360</span>
+        <header className="md:hidden flex flex-col px-6 py-4 bg-white border-b border-slate-200 sticky top-0 z-50 flex-shrink-0 gap-4">
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2">
+              <img src={logo} alt="StudyQuest360 Logo" className="w-7 h-7 object-contain" referrerPolicy="no-referrer" />
+              <span className="text-lg font-black tracking-tighter uppercase">STUDYQUEST360</span>
+            </div>
+            {activeUser && (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full border-2 border-[#e6d5b8] overflow-hidden bg-white">
+                  <img src={activeUser.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeUser.uid}`} alt="Avatar" className="w-full h-full object-cover" />
+                </div>
+              </div>
+            )}
           </div>
-          <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-rose-500 transition-colors">
-            <LogOut size={20} />
-          </button>
+          
+          {isStudentView && !showGame && !showAnswerBank && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+              <button 
+                onClick={() => setIsAddModalOpen(true)}
+                className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-[#8b5cf6] text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md border-2 border-[#7c3aed]"
+              >
+                <Plus size={14} />
+                New Quest
+              </button>
+              <button 
+                onClick={() => setIsAddTrialModalOpen(true)}
+                className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md border-2 border-amber-600"
+              >
+                <Flame size={14} />
+                New Trial
+              </button>
+            </div>
+          )}
         </header>
 
         {/* Sidebar */}
         <aside className="hidden md:flex w-64 flex-col bg-[#fdf6e3] border-r-4 border-[#e6d5b8] p-6 gap-8 flex-shrink-0 overflow-y-auto custom-scrollbar relative">
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-5 pointer-events-none" />
-        <div className="flex items-center gap-2 relative z-10 min-w-0">
-          <div className="w-9 h-9 bg-[#8b5cf6] rounded-xl flex items-center justify-center text-white shadow-lg border-2 border-[#7c3aed] flex-shrink-0">
-            <Trophy size={20} />
-          </div>
-          <h1 className="text-base font-black tracking-tighter text-[#4a3f35] uppercase truncate">studyquest360</h1>
+        <div className="flex items-center gap-3 relative z-10 min-w-0">
+          <img src={logo} alt="StudyQuest360 Logo" className="w-8 h-8 object-contain" referrerPolicy="no-referrer" />
+          <h1 className="text-lg font-black tracking-tighter text-[#4a3f35] uppercase truncate">STUDYQUEST360</h1>
         </div>
 
         <nav className="flex flex-col gap-2 relative z-10">
@@ -1146,15 +1145,24 @@ function StudyQuestApp() {
               />
             </div>
           )}
-          <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 w-full text-[#8c7b68] font-bold hover:text-rose-500 transition-all">
-            <LogOut size={20} />
-            Sign Out
-          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 flex-1 text-[#8c7b68] font-bold hover:text-rose-500 transition-all">
+              <LogOut size={20} />
+              Sign Out
+            </button>
+            <button 
+              onClick={() => setShowTutorial(true)} 
+              className="p-3 text-[#8c7b68] hover:text-brand-500 transition-all"
+              title="Help & Tutorial"
+            >
+              <HelpCircle size={20} />
+            </button>
+          </div>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
         {isAdminMode ? (
           <AdminDashboard 
             users={allUsers} 
@@ -1179,7 +1187,12 @@ function StudyQuestApp() {
               isLockedOut={isLockedOut}
               parentSettings={parentSettings}
               sessions={gameSessions}
-              onTryUsed={() => updateDoc(doc(db, 'users', activeUser.uid), { tries: activeUser.tries - 1 })}
+              onTryUsed={() => {
+                const isUnlimited = activeUser.email === 'pettigrewjoel@gmail.com';
+                if (!isUnlimited) {
+                  updateDoc(doc(db, 'users', activeUser.uid), { tries: activeUser.tries - 1 });
+                }
+              }}
               onScore={(gameId, score) => {
                 const currentHighScore = activeUser.highScores?.[gameId] || 0;
                 const newXp = activeUser.xp + (score * 10); // 10 XP per game point
@@ -1191,6 +1204,13 @@ function StudyQuestApp() {
                 if (score > currentHighScore) {
                   updates[`highScores.${gameId}`] = score;
                 }
+                
+                // Deduct key if not unlimited
+                const isUnlimited = activeUser.email === 'pettigrewjoel@gmail.com';
+                if (!isUnlimited) {
+                  updates.tries = Math.max(0, activeUser.tries - 1);
+                }
+                
                 updateDoc(doc(db, 'users', activeUser.uid), updates);
                 
                 // Track session
@@ -1205,16 +1225,18 @@ function StudyQuestApp() {
           </div>
         ) : (
           <div className="p-4 md:p-8 lg:p-12 space-y-8 font-serif">
-            <header className="bg-[#fdf6e3] p-4 rounded-[2rem] border-4 border-[#e6d5b8] shadow-2xl relative overflow-hidden z-40 mb-4">
+            <header className="hidden md:block bg-[#fdf6e3] p-4 rounded-[2rem] border-4 border-[#e6d5b8] shadow-2xl relative overflow-hidden z-40 mb-4">
               <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-20 pointer-events-none" />
               
               <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 {/* Left Section: Welcome & Level */}
                 <div className="flex items-center gap-4 flex-1">
-                  <div className="relative">
-                    <div className="w-14 h-14 bg-gradient-to-br from-[#8b5cf6] to-[#7c3aed] rounded-2xl flex items-center justify-center text-white shadow-xl border-2 border-white/30 transform -rotate-3 hover:rotate-0 transition-transform duration-500">
-                      <Trophy size={28} className="drop-shadow-lg" />
-                    </div>
+                  <div 
+                    className="relative cursor-pointer group hover:scale-105 transition-transform" 
+                    onClick={() => setIsAvatarSelectorOpen(true)}
+                    title="Change Avatar"
+                  >
+                    <AvatarIcon id={activeUser.avatar} className="w-14 h-14 shadow-xl border-2 border-white/30 transform -rotate-3 group-hover:rotate-0 transition-transform duration-500" />
                     <div className="absolute -bottom-1 -right-1 bg-amber-400 text-[#4a3f35] w-7 h-7 rounded-full border-2 border-white flex items-center justify-center font-black text-xs shadow-md">
                       {activeUser.level}
                     </div>
@@ -1263,7 +1285,9 @@ function StudyQuestApp() {
                   <div className="flex items-center gap-3 px-4 py-2 bg-white border-2 border-[#e6d5b8] rounded-2xl shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex flex-col items-end">
                       <span className="text-[8px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">Keys</span>
-                      <span className="text-lg font-black text-[#4a3f35] leading-none">{activeUser.tries || 0}</span>
+                      <span className="text-lg font-black text-[#4a3f35] leading-none">
+                        {activeUser.email === 'pettigrewjoel@gmail.com' ? '∞' : (activeUser.tries || 0)}
+                      </span>
                     </div>
                     <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center border border-amber-200 shadow-inner group">
                       <Key size={16} className="text-amber-500 group-hover:rotate-12 transition-transform" />
@@ -1300,32 +1324,34 @@ function StudyQuestApp() {
               </div>
             </header>
 
-            <AssignmentTimeline 
-              assignments={assignments} 
-              trials={trials}
-              onSelect={(a) => {
-                setSelectedAssignment(a);
-                questBoardRef.current?.scrollIntoView({ behavior: 'smooth' });
-              }} 
-              onTrialSelect={(t) => {
-                setSelectedTrial(t);
-                setIsTrialStudyOpen(true);
-              }}
-              onDateSelect={(date) => {
-                setDateFilter(date);
-                setShowOverdueOnly(false);
-                setFilter('all');
-                questBoardRef.current?.scrollIntoView({ behavior: 'smooth' });
-              }}
-              onOverdueSelect={() => {
-                setShowOverdueOnly(true);
-                setDateFilter(null);
-                setFilter('all');
-                questBoardRef.current?.scrollIntoView({ behavior: 'smooth' });
-              }}
-              selectedDate={dateFilter}
-              isOverdueSelected={showOverdueOnly}
-            />
+            <div className="hidden md:block">
+              <AssignmentTimeline 
+                assignments={assignments} 
+                trials={trials}
+                onSelect={(a) => {
+                  setSelectedAssignment(a);
+                  questBoardRef.current?.scrollIntoView({ behavior: 'smooth' });
+                }} 
+                onTrialSelect={(t) => {
+                  setSelectedTrial(t);
+                  setIsTrialStudyOpen(true);
+                }}
+                onDateSelect={(date) => {
+                  setDateFilter(date);
+                  setShowOverdueOnly(false);
+                  setFilter('all');
+                  questBoardRef.current?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                onOverdueSelect={() => {
+                  setShowOverdueOnly(true);
+                  setDateFilter(null);
+                  setFilter('all');
+                  questBoardRef.current?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                selectedDate={dateFilter}
+                isOverdueSelected={showOverdueOnly}
+              />
+            </div>
 
             <div className="relative font-serif">
               <AnimatePresence mode="wait">
@@ -1337,10 +1363,10 @@ function StudyQuestApp() {
                   className="space-y-8" 
                   ref={questBoardRef}
                 >
-                  <section className="bg-[#fdf6e3] rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl overflow-hidden flex flex-col min-h-[800px] relative">
+                  <section className="bg-[#fdf6e3] rounded-none md:rounded-[3rem] border-y-4 md:border-4 border-[#e6d5b8] shadow-2xl overflow-hidden flex flex-col min-h-[800px] relative">
                       <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-10 pointer-events-none" />
                       
-                      <div className="p-10 border-b-4 border-[#e6d5b8] flex flex-col md:flex-row md:items-center justify-between gap-8 bg-white/50 relative z-10">
+                      <div className="p-6 md:p-10 border-b-4 border-[#e6d5b8] flex flex-col md:flex-row md:items-center justify-between gap-8 bg-white/50 relative z-10">
                         <div>
                           <h3 className="text-4xl font-black text-[#4a3f35] tracking-tight">Quest Board</h3>
                           <div className="flex items-center gap-2 mt-1">
@@ -1357,7 +1383,7 @@ function StudyQuestApp() {
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-4">
+                        <div className="hidden md:flex items-center gap-4">
                           <div className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-[#e6d5b8] rounded-2xl shadow-sm">
                             <span className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">Subject:</span>
                             <select 
@@ -1586,7 +1612,15 @@ function StudyQuestApp() {
           </div>
         )}
 
-        {showResetConfirm && (
+        {isAvatarSelectorOpen && (
+        <AvatarSelector 
+          currentAvatar={activeUser.avatar} 
+          onSelect={(avatar) => updateDoc(doc(db, 'users', activeUser.uid), { avatar })}
+          onClose={() => setIsAvatarSelectorOpen(false)}
+        />
+      )}
+
+      {showResetConfirm && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }} 
@@ -1804,6 +1838,31 @@ function StudyQuestApp() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Mobile Navigation Footer */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-2 flex items-center justify-around z-50 shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
+        <button 
+          onClick={() => { setShowGame(false); setShowAnswerBank(false); setIsStudyAssistOpen(false); }}
+          className={cn("flex flex-col items-center gap-1 p-2", !showGame && !showAnswerBank ? "text-[#8b5cf6]" : "text-slate-400")}
+        >
+          <LayoutDashboard size={20} />
+          <span className="text-[9px] font-black uppercase tracking-tighter">Home</span>
+        </button>
+        <button 
+          onClick={() => { setShowAnswerBank(true); setShowGame(false); setIsStudyAssistOpen(false); }}
+          className={cn("flex flex-col items-center gap-1 p-2", showAnswerBank ? "text-[#8b5cf6]" : "text-slate-400")}
+        >
+          <BookOpen size={20} />
+          <span className="text-[9px] font-black uppercase tracking-tighter">Library</span>
+        </button>
+        <button 
+          onClick={handleLogout}
+          className="flex flex-col items-center gap-1 p-2 text-slate-400"
+        >
+          <LogOut size={20} />
+          <span className="text-[9px] font-black uppercase tracking-tighter">Exit</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -1819,10 +1878,8 @@ function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onSc
   }, [parentSettings?.activeGameId]);
 
   const games = [
-    { id: 'concept-match', title: 'Concept Match', description: 'Match 4 concepts to score points.', icon: <Gamepad2 size={24} />, color: 'bg-[#8b5cf6]' },
-    { id: 'gravity-match', title: 'Gravity Drop', description: 'Physics-based concept matching with falling shapes!', icon: <Sparkles size={24} />, color: 'bg-[#f59e0b]' },
     { id: 'questrun', title: 'Quest Run', description: 'Run, jump, and answer questions in this fast-paced arena!', icon: <Zap size={24} />, color: 'bg-[#3b82f6]' },
-    { id: 'target-practice', title: 'Target Practice', description: 'Aim and shoot at the correct answers!', icon: <Target size={24} />, color: 'bg-[#ef4444]' },
+    { id: 'quest-snake', title: 'Quest Snake', description: 'Collect orbs, avoid monsters, and solve arcane riddles to grow your power.', icon: <Gamepad2 size={24} />, color: 'bg-[#8b5cf6]' },
     { id: 'space-portal', title: 'Space Portal', description: 'Fly through portals and answer questions in deep space!', icon: <Compass size={24} />, color: 'bg-[#1e293b]' }
   ];
 
@@ -1853,6 +1910,9 @@ function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onSc
     };
   });
 
+  const isUnlimited = user.email === 'pettigrewjoel@gmail.com';
+  const gameTries = isUnlimited ? 999 : (user.tries || 0);
+
   if (selectedGame === 'space-portal') {
     return (
       <div className="space-y-6">
@@ -1860,7 +1920,7 @@ function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onSc
           <ChevronRight size={20} className="rotate-180" /> Back to Games
         </button>
         <SpacePortalGame 
-          tries={user.tries} 
+          tries={gameTries} 
           isLockedOut={isLockedOut}
           parentSettings={parentSettings}
           onTryUsed={onTryUsed}
@@ -1880,7 +1940,7 @@ function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onSc
           <ChevronRight size={20} className="rotate-180" /> Back to Games
         </button>
         <QuestRunGame 
-          tries={user.tries} 
+          tries={gameTries} 
           isLockedOut={isLockedOut}
           parentSettings={parentSettings}
           onTryUsed={onTryUsed}
@@ -1893,62 +1953,20 @@ function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onSc
     );
   }
 
-  if (selectedGame === 'target-practice') {
+  if (selectedGame === 'quest-snake') {
     return (
       <div className="space-y-6">
         <button onClick={() => setSelectedGame(null)} className="flex items-center gap-2 text-slate-500 font-bold hover:text-slate-900 transition-all">
           <ChevronRight size={20} className="rotate-180" /> Back to Games
         </button>
-        <TargetPracticeGame 
-          tries={user.tries} 
+        <QuestSnakeGame 
+          tries={gameTries} 
           isLockedOut={isLockedOut}
           parentSettings={parentSettings}
           onTryUsed={onTryUsed}
-          onScore={(score) => onScore('target-practice', score)}
+          onScore={(score) => onScore('quest-snake', score)}
           assignments={assignments}
           answerBanks={answerBanks}
-          user={user}
-        />
-      </div>
-    );
-  }
-
-  if (selectedGame === 'concept-match') {
-    return (
-      <div className="space-y-6">
-        <button onClick={() => setSelectedGame(null)} className="flex items-center gap-2 text-slate-500 font-bold hover:text-slate-900 transition-all">
-          <ChevronRight size={20} className="rotate-180" /> Back to Games
-        </button>
-        <ConceptMatchGame 
-          tries={user.tries} 
-          isLockedOut={isLockedOut}
-          parentSettings={parentSettings}
-          onTryUsed={onTryUsed}
-          onScore={(score) => onScore('concept-match', score)}
-          grade={user.grade}
-          assignments={assignments}
-          answerBanks={answerBanks}
-          user={user}
-        />
-      </div>
-    );
-  }
-
-  if (selectedGame === 'gravity-match') {
-    return (
-      <div className="space-y-6">
-        <button onClick={() => setSelectedGame(null)} className="flex items-center gap-2 text-slate-500 font-bold hover:text-slate-900 transition-all">
-          <ChevronRight size={20} className="rotate-180" /> Back to Games
-        </button>
-        <GravityMatchGame 
-          tries={user.tries} 
-          isLockedOut={isLockedOut}
-          parentSettings={parentSettings}
-          assignments={assignments}
-          answerBanks={answerBanks}
-          onTryUsed={onTryUsed}
-          onScore={(score) => onScore('gravity-match', score)}
-          grade={user.grade}
           user={user}
         />
       </div>
@@ -1970,7 +1988,9 @@ function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onSc
             </div>
             <div>
               <p className="text-[10px] font-black text-[#8c7b68] uppercase tracking-widest font-sans">Quest Keys</p>
-              <p className="text-3xl font-black text-[#4a3f35] leading-none">{user.tries || 0}</p>
+              <p className="text-3xl font-black text-[#4a3f35] leading-none">
+                {user.email === 'pettigrewjoel@gmail.com' ? '∞' : (user.tries || 0)}
+              </p>
             </div>
           </div>
           <div className="px-6 py-4 bg-[#fdf6e3] border-4 border-[#e6d5b8] rounded-3xl shadow-xl flex items-center gap-4">
@@ -2706,37 +2726,37 @@ const AssignmentRow: React.FC<{
 }> = ({ assignment, onToggle, onDelete, onSelect, onStudy, onTraining, onEdit, isSelected }) => {
   return (
     <div className={cn(
-      "group p-6 flex items-center gap-6 transition-all hover:bg-white/50 cursor-pointer border-l-8", 
+      "group p-4 md:p-6 flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-6 transition-all hover:bg-white/50 cursor-pointer border-l-8", 
       assignment.status === 'completed' ? "opacity-60 border-transparent" : isSelected ? "border-[#8b5cf6] bg-[#8b5cf6]/5" : "border-transparent"
     )}>
-      <div className="flex flex-col items-center gap-1 shrink-0">
+      <div className="flex md:flex-col items-center gap-3 md:gap-1 shrink-0">
         <button onClick={(e) => { e.stopPropagation(); onToggle(); }} className={cn(
-          "w-12 h-12 rounded-2xl border-4 flex items-center justify-center transition-all shadow-lg transform active:scale-90",
+          "w-10 h-10 md:w-12 md:h-12 rounded-2xl border-4 flex items-center justify-center transition-all shadow-lg transform active:scale-90",
           assignment.status === 'completed' 
             ? "bg-emerald-500 border-emerald-600 text-white rotate-[360deg]" 
             : "bg-white border-[#e6d5b8] text-[#e6d5b8] hover:border-[#8b5cf6] hover:text-[#8b5cf6]"
         )}>
-          {assignment.status === 'completed' ? <CheckCircle2 size={24} strokeWidth={3} /> : <Circle size={24} strokeWidth={3} />}
+          {assignment.status === 'completed' ? <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6" strokeWidth={3} /> : <Circle className="w-5 h-5 md:w-6 md:h-6" strokeWidth={3} />}
         </button>
         <span className={cn(
-          "text-[8px] font-black uppercase tracking-tighter",
+          "text-[8px] md:text-[10px] font-black uppercase tracking-tighter",
           assignment.status === 'completed' ? "text-emerald-600" : "text-[#8c7b68]"
         )}>
           {assignment.status === 'completed' ? 'Turned In' : 'Turn In'}
         </span>
       </div>
-      <div className="flex-1 min-w-0" onClick={onSelect}>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex items-center gap-1.5 text-xs font-black text-[#8c7b68] uppercase tracking-widest font-sans">
-            <Calendar size={14} />
-            {format(parseISO(assignment.dueDate), 'MMMM d, yyyy')}
+      <div className="flex-1 min-w-0 w-full" onClick={onSelect}>
+        <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-2">
+          <div className="flex items-center gap-1.5 text-[10px] md:text-xs font-black text-[#8c7b68] uppercase tracking-widest font-sans">
+            <Calendar className="w-3 h-3 md:w-3.5 md:h-3.5" />
+            {format(parseISO(assignment.dueDate), 'MMM d, yyyy')}
           </div>
-          <span className="text-[10px] font-black text-[#8b5cf6] uppercase tracking-widest bg-[#8b5cf6]/10 px-3 py-2 rounded-full border border-[#8b5cf6]/20 font-sans">
+          <span className="text-[8px] md:text-[10px] font-black text-[#8b5cf6] uppercase tracking-widest bg-[#8b5cf6]/10 px-2 md:px-3 py-1 md:py-2 rounded-full border border-[#8b5cf6]/20 font-sans">
             {assignment.subject}
           </span>
           {assignment.topic && (
-            <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-3 py-1 rounded-full border border-amber-200 font-sans flex items-center gap-1">
-              <Sparkles size={10} />
+            <span className="text-[8px] md:text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-2 md:px-3 py-1 rounded-full border border-amber-200 font-sans flex items-center gap-1">
+              <Sparkles className="w-2 h-2 md:w-2.5 md:h-2.5" />
               {assignment.topic}
             </span>
           )}
@@ -2748,37 +2768,39 @@ const AssignmentRow: React.FC<{
               onClick={(e) => e.stopPropagation()}
               className="text-[#8b5cf6] hover:text-[#7c3aed] p-1 bg-white rounded-md border border-[#e6d5b8] shadow-sm"
             >
-              <ExternalLink size={14} />
+              <ExternalLink className="w-3 h-3 md:w-3.5 md:h-3.5" />
             </a>
           )}
         </div>
-        <h5 className={cn("text-xl font-black text-[#4a3f35] truncate leading-tight", assignment.status === 'completed' && "line-through text-slate-400")}>
+        <h5 className={cn("text-lg md:text-xl font-black text-[#4a3f35] truncate leading-tight", assignment.status === 'completed' && "line-through text-slate-400")}>
           {assignment.title}
         </h5>
       </div>
-      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 md:opacity-0 group-hover:opacity-100 transition-opacity w-full md:w-auto justify-end">
+        <div className="flex md:flex-col gap-2 flex-1 md:flex-none">
           <button 
             onClick={(e) => { e.stopPropagation(); onStudy(); }} 
-            className="flex items-center gap-2 px-4 py-2 bg-[#8b5cf6] text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-[#7c3aed] transition-all shadow-md border-2 border-[#7c3aed]"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2 bg-[#8b5cf6] text-white rounded-xl font-black text-[10px] md:text-xs uppercase tracking-widest hover:bg-[#7c3aed] transition-all shadow-md border-2 border-[#7c3aed]"
           >
-            <Wand2 size={16} />
+            <Wand2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
             Study
           </button>
           <button 
             onClick={(e) => { e.stopPropagation(); onTraining(); }} 
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-md border-2 border-emerald-600"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2 bg-emerald-500 text-white rounded-xl font-black text-[10px] md:text-xs uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-md border-2 border-emerald-600"
           >
-            <BrainCircuit size={16} />
+            <BrainCircuit className="w-3.5 h-3.5 md:w-4 md:h-4" />
             Training
           </button>
         </div>
-        <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-3 bg-white text-[#b8a992] hover:text-[#8b5cf6] rounded-xl border border-[#e6d5b8] shadow-sm transition-all hover:scale-110">
-          <Settings size={20} />
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-3 bg-white text-[#b8a992] hover:text-rose-500 rounded-xl border border-[#e6d5b8] shadow-sm transition-all hover:scale-110">
-          <Trash2 size={20} />
-        </button>
+        <div className="flex gap-2">
+          <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-2 md:p-3 bg-white text-[#b8a992] hover:text-[#8b5cf6] rounded-xl border border-[#e6d5b8] shadow-sm transition-all hover:scale-110">
+            <Settings className="w-[18px] h-[18px] md:w-5 md:h-5" />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-2 md:p-3 bg-white text-[#b8a992] hover:text-rose-500 rounded-xl border border-[#e6d5b8] shadow-sm transition-all hover:scale-110">
+            <Trash2 className="w-[18px] h-[18px] md:w-5 md:h-5" />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -2794,50 +2816,52 @@ const TrialRow: React.FC<{
 }> = ({ trial, onToggle, onDelete, onSelect, onEdit, isSelected }) => {
   return (
     <div className={cn(
-      "group p-6 flex items-center gap-6 transition-all hover:bg-white/50 cursor-pointer border-l-8", 
+      "group p-4 md:p-6 flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-6 transition-all hover:bg-white/50 cursor-pointer border-l-8", 
       trial.status === 'completed' ? "opacity-60 border-transparent" : isSelected ? "border-amber-500 bg-amber-500/5" : "border-transparent"
     )}>
-      <div className="flex flex-col items-center gap-1 shrink-0">
+      <div className="flex md:flex-col items-center gap-3 md:gap-1 shrink-0">
         <button onClick={(e) => { e.stopPropagation(); onToggle(); }} className={cn(
-          "w-12 h-12 rounded-2xl border-4 flex items-center justify-center transition-all shadow-lg transform active:scale-90",
+          "w-10 h-10 md:w-12 md:h-12 rounded-2xl border-4 flex items-center justify-center transition-all shadow-lg transform active:scale-90",
           trial.status === 'completed' 
             ? "bg-emerald-500 border-emerald-600 text-white rotate-[360deg]" 
             : "bg-amber-100 border-amber-200 text-amber-600 hover:border-amber-500"
         )}>
-          {trial.status === 'completed' ? <CheckCircle2 size={24} strokeWidth={3} /> : <Flame size={24} strokeWidth={3} />}
+          {trial.status === 'completed' ? <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6" strokeWidth={3} /> : <Flame className="w-5 h-5 md:w-6 md:h-6" strokeWidth={3} />}
         </button>
         <span className={cn(
-          "text-[8px] font-black uppercase tracking-tighter",
+          "text-[8px] md:text-[10px] font-black uppercase tracking-tighter",
           trial.status === 'completed' ? "text-emerald-600" : "text-amber-600"
         )}>
           {trial.status === 'completed' ? 'Conquered' : 'Trial'}
         </span>
       </div>
-      <div className="flex-1 min-w-0" onClick={onSelect}>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex items-center gap-1.5 text-xs font-black text-[#8c7b68] uppercase tracking-widest font-sans">
-            <Calendar size={14} />
-            {format(parseISO(trial.dueDate), 'MMMM d, yyyy')}
+      <div className="flex-1 min-w-0 w-full" onClick={onSelect}>
+        <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-2">
+          <div className="flex items-center gap-1.5 text-[10px] md:text-xs font-black text-[#8c7b68] uppercase tracking-widest font-sans">
+            <Calendar className="w-3 h-3 md:w-3.5 md:h-3.5" />
+            {format(parseISO(trial.dueDate), 'MMM d, yyyy')}
           </div>
-          <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-3 py-2 rounded-full border border-amber-200 font-sans">
+          <span className="text-[8px] md:text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-2 md:px-3 py-1 md:py-2 rounded-full border border-amber-200 font-sans">
             {trial.subject}
           </span>
         </div>
-        <h5 className={cn("text-xl font-black text-[#4a3f35] truncate leading-tight", trial.status === 'completed' && "line-through text-slate-400")}>
+        <h5 className={cn("text-lg md:text-xl font-black text-[#4a3f35] truncate leading-tight", trial.status === 'completed' && "line-through text-slate-400")}>
           Trial: {trial.topics.join(', ')}
         </h5>
       </div>
-      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button onClick={(e) => { e.stopPropagation(); onSelect(); }} className="px-4 py-2 bg-amber-500 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-amber-600 transition-all shadow-md border-2 border-amber-600 flex items-center gap-2">
-          <Wand2 size={16} />
+      <div className="flex items-center gap-2 md:opacity-0 group-hover:opacity-100 transition-opacity w-full md:w-auto justify-end">
+        <button onClick={(e) => { e.stopPropagation(); onSelect(); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2 bg-amber-500 text-white rounded-xl font-black text-[10px] md:text-xs uppercase tracking-widest hover:bg-amber-600 transition-all shadow-md border-2 border-amber-600 flex items-center gap-2">
+          <Wand2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
           Prepare
         </button>
-        <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-3 bg-white text-[#b8a992] hover:text-[#8b5cf6] rounded-xl border border-[#e6d5b8] shadow-sm transition-all hover:scale-110">
-          <Settings size={20} />
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-3 bg-white text-[#b8a992] hover:text-rose-500 rounded-xl border border-[#e6d5b8] shadow-sm transition-all hover:scale-110">
-          <Trash2 size={20} />
-        </button>
+        <div className="flex gap-2">
+          <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-2 md:p-3 bg-white text-[#b8a992] hover:text-[#8b5cf6] rounded-xl border border-[#e6d5b8] shadow-sm transition-all hover:scale-110">
+            <Settings className="w-[18px] h-[18px] md:w-5 md:h-5" />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-2 md:p-3 bg-white text-[#b8a992] hover:text-rose-500 rounded-xl border border-[#e6d5b8] shadow-sm transition-all hover:scale-110">
+            <Trash2 className="w-[18px] h-[18px] md:w-5 md:h-5" />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -2986,34 +3010,35 @@ function AssignmentTimeline({
   }, [pathPoints]);
 
   return (
-    <div className="w-full bg-[#fdf6e3] rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl mb-12 overflow-hidden relative font-serif">
+    <div className="w-full bg-[#fdf6e3] rounded-[2rem] md:rounded-[3rem] border-4 border-[#e6d5b8] shadow-2xl mb-8 md:mb-12 overflow-hidden relative font-serif">
       {/* Parchment Scroll Container */}
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="relative w-full h-[650px] bg-[#e6d5b8] overflow-hidden"
+        className="relative w-full h-[400px] md:h-[650px] bg-[#e6d5b8] overflow-x-auto custom-scrollbar"
       >
-        {/* Parchment Texture */}
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-40 pointer-events-none" />
-        <div className="absolute inset-0 bg-gradient-to-tr from-[#8c6d46]/10 via-transparent to-[#8c6d46]/10 pointer-events-none" />
-        
-        {/* Tattered Edges */}
-        <div className="absolute inset-0 border-[12px] border-transparent" style={{ 
-          borderImageSource: "url('https://www.transparenttextures.com/patterns/paper-fibers.png')",
-          borderImageSlice: 30,
-          filter: 'contrast(1.2) sepia(0.5)'
-        }} />
+        <div className="min-w-[1200px] h-full relative">
+          {/* Parchment Texture */}
+          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/old-map.png')] opacity-40 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-tr from-[#8c6d46]/10 via-transparent to-[#8c6d46]/10 pointer-events-none" />
+          
+          {/* Tattered Edges */}
+          <div className="absolute inset-0 border-[8px] md:border-[12px] border-transparent" style={{ 
+            borderImageSource: "url('https://www.transparenttextures.com/patterns/paper-fibers.png')",
+            borderImageSlice: 30,
+            filter: 'contrast(1.2) sepia(0.5)'
+          }} />
 
-        {/* Header Section - Moved to avoid overlap */}
-        <div className="absolute top-8 left-12 z-20 flex items-start gap-4">
-          <div className="space-y-0">
-            <h3 className="text-4xl font-bold text-[#2c241a] tracking-tight font-['Cinzel'] leading-none">THE QUEST TRAIL</h3>
-            <p className="text-[#5c4033] font-medium text-[10px] uppercase tracking-[0.2em] opacity-80 font-['Cinzel']">Chart your journey through the realms of knowledge</p>
+          {/* Header Section - Moved to avoid overlap */}
+          <div className="absolute top-6 left-8 md:top-8 md:left-12 z-20 flex items-start gap-4">
+            <div className="space-y-0">
+              <h3 className="text-2xl md:text-4xl font-bold text-[#2c241a] tracking-tight font-['Cinzel'] leading-none">THE QUEST TRAIL</h3>
+              <p className="text-[#5c4033] font-medium text-[8px] md:text-[10px] uppercase tracking-[0.2em] opacity-80 font-['Cinzel']">Chart your journey through the realms of knowledge</p>
+            </div>
           </div>
-        </div>
 
-        {/* Map Content SVG */}
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 650">
+          {/* Map Content SVG */}
+          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 650">
           {/* Compass Rose - Moved to top right */}
           <OrnateCompassRose x={1100} y={50} scale={1} />
           
@@ -3094,9 +3119,9 @@ function AssignmentTimeline({
                       animate={{ scale: [1, 1.2, 1] }}
                       transition={{ repeat: Infinity, duration: 2 }}
                     >
-                      <path d="M -8,0 Q 0,-15 8,0 Q 0,10 -8,0" fill="#f59e0b" />
-                      <path d="M -4,0 Q 0,-8 4,0 Q 0,5 -4,0" fill="#ef4444" />
-                      <Flame size={16} x={-8} y={-12} className="text-amber-500" />
+                      <path d="M -16,0 Q 0,-30 16,0 Q 0,20 -16,0" fill="#f59e0b" />
+                      <path d="M -8,0 Q 0,-16 8,0 Q 0,10 -8,0" fill="#ef4444" />
+                      <Flame size={32} x={-16} y={-24} className="text-amber-500" />
                     </motion.g>
                   </g>
                 )}
@@ -3125,6 +3150,7 @@ function AssignmentTimeline({
             active={isOverdueSelected}
           />
         )}
+        </div>
       </motion.div>
     </div>
   );

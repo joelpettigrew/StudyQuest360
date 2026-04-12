@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Settings as SettingsIcon, Shield, Clock, TrendingUp, Plus, Trash2, Gamepad2, LogOut, X, Calendar, Sparkles, Wand2, ExternalLink, Loader2, AlertTriangle, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Users, Settings as SettingsIcon, Shield, Clock, TrendingUp, Plus, Trash2, Gamepad2, LogOut, X, Calendar, Sparkles, Wand2, ExternalLink, Loader2, AlertTriangle, CheckCircle2, AlertCircle, Key } from 'lucide-react';
 import { db, doc, onSnapshot, setDoc, updateDoc, collection, query, where, auth, signOut, getDoc, handleFirestoreError, OperationType, addDoc, serverTimestamp, deleteDoc } from '../firebase';
 import { UserProfile, ParentSettings, Assignment, Priority, Trial } from '../types';
+import { processTopicForGlobalDB } from '../services/answerBankService';
 import { cn } from '../lib/utils';
+import { AvatarIcon } from './AvatarSelector';
 import { format, subDays, isSameDay, startOfDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -89,6 +91,21 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
     });
     return () => unsubscribeSettings();
   }, [user.uid]);
+
+  const handleGiftKeys = async (studentId: string) => {
+    try {
+      const studentRef = doc(db, 'users', studentId);
+      const studentDoc = await getDoc(studentRef);
+      if (studentDoc.exists()) {
+        const currentTries = (studentDoc.data() as UserProfile).tries || 0;
+        await updateDoc(studentRef, { tries: currentTries + 5 });
+        alert("5 Quest Keys gifted successfully!");
+      }
+    } catch (error) {
+      console.error("Error gifting keys:", error);
+      alert("Failed to gift keys.");
+    }
+  };
 
   const handleLinkStudent = async () => {
     const trimmedId = studentIdInput.trim();
@@ -365,8 +382,8 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
               {/* Student Card */}
               <div className="w-full xl:w-[350px] bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-4 mb-6">
-                  <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center border-2 border-brand-500 overflow-hidden">
-                    <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${student.uid}`} alt="Avatar" className="w-full h-full" />
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center border-2 border-brand-500 overflow-hidden">
+                    <AvatarIcon id={student.avatar} className="w-full h-full" />
                   </div>
                   <div>
                     <h4 className="font-bold text-slate-900">{student.displayName}</h4>
@@ -380,6 +397,13 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                   <div className="flex justify-between text-sm"><span className="text-slate-500 font-medium">Game Tries</span><span className="text-brand-600 font-bold">{student.tries}</span></div>
                 </div>
                 <div className="flex flex-col gap-2 mt-6">
+                  <button 
+                    onClick={() => handleGiftKeys(student.uid)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all text-sm shadow-md shadow-amber-200"
+                  >
+                    <Key size={16} />
+                    Gift 5 Keys
+                  </button>
                   <button 
                     onClick={() => onImpersonate(student)}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-xl font-bold hover:bg-brand-600 transition-all text-sm shadow-md shadow-brand-200"
@@ -608,6 +632,15 @@ export default function ParentDashboard({ user, onReset, onImpersonate }: Parent
                         status: 'pending',
                         createdAt: serverTimestamp()
                       });
+                      
+                      // Process topic for global DB
+                      processTopicForGlobalDB(
+                        assignmentData.topic || assignmentData.title, 
+                        assignmentData.subject, 
+                        selectedStudentForQuest.grade || '9th Grade', 
+                        selectedStudentForQuest.uid
+                      ).catch(err => console.error("Parent background topic processing failed:", err));
+
                       setIsQuestModalOpen(false);
                     } catch (error) {
                       handleFirestoreError(error, OperationType.WRITE, 'assignments');

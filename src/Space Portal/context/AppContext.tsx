@@ -46,6 +46,7 @@ export interface AppContextType {
   lives: number;
   currentQuestion: Question | null;
   answerQuestion: (index: number) => void;
+  sessionQuestions: any[];
 
   // Ship Config
   shipConfig: ShipConfig;

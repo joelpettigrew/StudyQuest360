@@ -24,6 +24,12 @@ export type ViewMode = 'cockpit' | 'chase';
 
 export type GameState = 'playing' | 'gameover' | 'quiz' | 'idle';
 
+export interface SessionQuestion {
+    question: string;
+    answer: string;
+    correct: boolean;
+}
+
 export interface Question {
     id: string;
     text: string;

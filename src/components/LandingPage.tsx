@@ -1,39 +1,140 @@
 import React from 'react';
-import { motion } from 'motion/react';
-import { Gamepad2, Zap, Map, Skull, ArrowRight, Loader2, ScrollText } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Gamepad2, Zap, Map, Skull, ArrowRight, Loader2, ScrollText, X, Shield, FileText, Mail } from 'lucide-react';
 import { cn } from '../lib/utils';
+import logo from '/studyquestMarketing.png';
 
 interface LandingPageProps {
   onLogin: () => void;
   isLoggingIn: boolean;
-  onShowPrivacy: () => void;
 }
 
-export default function LandingPage({ onLogin, isLoggingIn, onShowPrivacy }: LandingPageProps) {
+export default function LandingPage({ onLogin, isLoggingIn }: LandingPageProps) {
   const [videoEnded, setVideoEnded] = React.useState(false);
+  const [showLegalModal, setShowLegalModal] = React.useState<'privacy' | 'terms' | 'support' | null>(null);
+
+  const LegalModal = () => (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10">
+      <motion.div 
+        initial={{ opacity: 0 }} 
+        animate={{ opacity: 1 }} 
+        exit={{ opacity: 0 }} 
+        onClick={() => setShowLegalModal(null)}
+        className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl" 
+      />
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9, y: 20 }} 
+        animate={{ opacity: 1, scale: 1, y: 0 }} 
+        exit={{ opacity: 0, scale: 0.9, y: 20 }} 
+        className="relative w-full max-w-4xl max-h-[80vh] bg-slate-900 border-4 border-slate-800 rounded-[3rem] shadow-2xl overflow-hidden flex flex-col"
+      >
+        <div className="p-8 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+          <div className="flex items-center gap-4">
+            <img src={logo} alt="Logo" className="w-12 h-12 object-contain" />
+            <h3 className="text-3xl font-black uppercase tracking-tighter">
+              {showLegalModal === 'privacy' && 'Privacy Policy'}
+              {showLegalModal === 'terms' && 'Terms of Service'}
+              {showLegalModal === 'support' && 'Support Center'}
+            </h3>
+          </div>
+          <button 
+            onClick={() => setShowLegalModal(null)}
+            className="p-3 bg-slate-800 text-slate-400 hover:text-white rounded-2xl transition-all"
+          >
+            <X size={24} />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-8 md:p-12 space-y-8 font-sans">
+          {showLegalModal === 'privacy' && (
+            <div className="space-y-6 text-slate-300">
+              <section className="space-y-4">
+                <h4 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-2">
+                  <Shield className="text-blue-400" size={20} />
+                  Your Data, Your Quest
+                </h4>
+                <p className="leading-relaxed">At StudyQuest360, we believe your academic journey is personal. We collect only the data necessary to provide our adaptive learning experience, including your grade level, subjects, and study progress.</p>
+              </section>
+              <section className="space-y-4">
+                <h4 className="text-xl font-black text-white uppercase tracking-tight">Information We Collect</h4>
+                <ul className="list-disc pl-6 space-y-2">
+                  <li>Account Information: Name, email, and profile preferences.</li>
+                  <li>Academic Data: Grades, subjects, and assignment details you provide.</li>
+                  <li>Usage Data: How you interact with the Quest Trail and Arena games.</li>
+                </ul>
+              </section>
+              <section className="space-y-4">
+                <h4 className="text-xl font-black text-white uppercase tracking-tight">How We Use It</h4>
+                <p className="leading-relaxed">We use your data to personalize the Oracle's explanations, track your XP, and provide parents with progress reports. We never sell your data to third parties.</p>
+              </section>
+            </div>
+          )}
+          
+          {showLegalModal === 'terms' && (
+            <div className="space-y-6 text-slate-300">
+              <section className="space-y-4">
+                <h4 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-2">
+                  <FileText className="text-purple-400" size={20} />
+                  The Rules of the Realm
+                </h4>
+                <p className="leading-relaxed">By using StudyQuest360, you agree to embark on an honest academic adventure. Our tools are designed to support learning, not to bypass it.</p>
+              </section>
+              <section className="space-y-4">
+                <h4 className="text-xl font-black text-white uppercase tracking-tight">User Conduct</h4>
+                <p className="leading-relaxed">Users are expected to use the AI Oracle for educational support. Any attempt to exploit the system or use it for academic dishonesty is a violation of our terms.</p>
+              </section>
+              <section className="space-y-4">
+                <h4 className="text-xl font-black text-white uppercase tracking-tight">Account Safety</h4>
+                <p className="leading-relaxed">You are responsible for maintaining the security of your account and your Quest Keys. Do not share your login credentials with others.</p>
+              </section>
+            </div>
+          )}
+          
+          {showLegalModal === 'support' && (
+            <div className="space-y-8 text-slate-300 text-center py-12">
+              <div className="w-24 h-24 bg-blue-600/20 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-blue-600/30">
+                <Mail className="text-blue-400" size={48} />
+              </div>
+              <div className="space-y-4">
+                <h4 className="text-3xl font-black text-white uppercase tracking-tighter">Need Assistance?</h4>
+                <p className="text-xl font-medium">Our team of scholars is ready to help you with any technical or academic questions.</p>
+              </div>
+              <div className="pt-8">
+                <a 
+                  href="mailto:studyquest360@pettigrewlab.com"
+                  className="inline-flex items-center gap-3 px-10 py-5 bg-blue-600 text-white font-black text-xl rounded-2xl hover:bg-blue-500 transition-all shadow-xl shadow-blue-900/40"
+                >
+                  Email Support
+                </a>
+                <p className="mt-6 text-slate-500 font-bold uppercase tracking-widest text-sm">studyquest360@pettigrewlab.com</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 font-serif overflow-x-hidden selection:bg-amber-400 selection:text-slate-950">
+      {/* Legal Modal */}
+      <AnimatePresence>
+        {showLegalModal && <LegalModal />}
+      </AnimatePresence>
+
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 p-6 flex justify-between items-center z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
-        <div className="flex items-center gap-2">
-          <ScrollText className="text-blue-400" size={32} />
-          <span className="text-2xl font-black tracking-tighter uppercase font-sans">studyquest360<span className="text-purple-400">.com</span></span>
+        <div className="flex items-center gap-4">
+          <img src={logo} alt="StudyQuest360 Logo" className="w-9 h-9 md:w-11 md:h-11 object-contain" referrerPolicy="no-referrer" />
+          <span className="text-3xl md:text-4xl font-black tracking-tighter uppercase font-sans">STUDYQUEST360<span className="text-purple-400">.COM</span></span>
         </div>
         <div className="flex items-center gap-4">
           <button 
             onClick={onLogin}
             disabled={isLoggingIn}
-            className="px-6 py-2 bg-slate-800 text-white font-black uppercase tracking-wider hover:bg-slate-700 transition-colors rounded-none border-2 border-slate-700 font-sans text-sm"
+            className="px-8 py-3 bg-blue-600 text-white font-black uppercase tracking-wider hover:bg-blue-500 transition-all rounded-xl border-2 border-blue-600 font-sans text-sm shadow-lg shadow-blue-900/20 active:scale-95"
           >
-            Student Login
-          </button>
-          <button 
-            onClick={onLogin}
-            disabled={isLoggingIn}
-            className="px-6 py-2 bg-blue-600 text-white font-black uppercase tracking-wider hover:bg-blue-500 transition-colors rounded-none border-2 border-blue-600 font-sans text-sm"
-          >
-            Parent Login
+            {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Login / Sign Up'}
           </button>
         </div>
       </nav>
@@ -235,23 +336,23 @@ export default function LandingPage({ onLogin, isLoggingIn, onShowPrivacy }: Lan
       <footer className="py-12 px-6 bg-slate-950 border-t border-slate-900 text-center space-y-8">
         <div className="flex flex-col md:flex-row items-center justify-center gap-8">
           <button 
-            onClick={onShowPrivacy}
+            onClick={() => setShowLegalModal('privacy')}
             className="text-slate-400 hover:text-white transition-colors font-bold text-sm underline underline-offset-4 uppercase tracking-widest"
           >
             Privacy Policy
           </button>
-          <a 
-            href="#"
+          <button 
+            onClick={() => setShowLegalModal('terms')}
             className="text-slate-400 hover:text-white transition-colors font-bold text-sm underline underline-offset-4 uppercase tracking-widest"
           >
             Terms of Service
-          </a>
-          <a 
-            href="mailto:studyquest360@pettigrewlab.com"
+          </button>
+          <button 
+            onClick={() => setShowLegalModal('support')}
             className="text-slate-400 hover:text-white transition-colors font-bold text-sm underline underline-offset-4 uppercase tracking-widest"
           >
-            Support: studyquest360@pettigrewlab.com
-          </a>
+            Support
+          </button>
         </div>
         <div className="space-y-2">
           <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">© 2026 StudyQuest360. All rights reserved.</p>

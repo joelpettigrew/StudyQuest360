@@ -55,6 +55,7 @@ export const useAppStoreComplete = (
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
+  const [sessionQuestions, setSessionQuestions] = useState<any[]>([]);
   const nextCircleZRef = useRef(75);
   const lastCircleZRef = useRef(0);
 
@@ -111,6 +112,7 @@ export const useAppStoreComplete = (
     if (onTryUsed) onTryUsed();
     setGameState('playing');
     gameStateRef.current = 'playing';
+    setSessionQuestions([]);
   }, [onTryUsed]);
 
   const [shipConfig, setShipConfig] = useState<ShipConfig>({
@@ -162,12 +164,21 @@ export const useAppStoreComplete = (
     collisionStateRef.current = 'none';
     setScore(0);
     setLives(3);
+    setSessionQuestions([]);
     nextCircleZRef.current = 75;
   }, [onTryUsed]);
 
   const answerQuestion = useCallback((index: number) => {
     if (!currentQuestion) return;
-    if (index === currentQuestion.correctIndex) {
+    const isCorrect = index === currentQuestion.correctIndex;
+    
+    setSessionQuestions(prev => [...prev, {
+      question: currentQuestion.text,
+      answer: currentQuestion.options[currentQuestion.correctIndex],
+      correct: isCorrect
+    }]);
+
+    if (isCorrect) {
       setScore(s => s + 100);
       setGameState('playing');
       gameStateRef.current = 'playing';
@@ -302,7 +313,7 @@ export const useAppStoreComplete = (
     allUniforms: uniforms, cameraRef, renderCameraRef, cameraVelocityRef, cameraAngularVelocityRef,
     pressKey, releaseKey, cameraControlsEnabled: true, pressedKeys, isInteracting, setIsInteracting,
     isHdEnabled, isFpsEnabled, isMoving, collisionState, collisionProximity,
-    gameState, startGame, restartGame, score, lives, currentQuestion, answerQuestion, viewMode, setViewMode,
+    gameState, startGame, restartGame, score, lives, currentQuestion, answerQuestion, sessionQuestions, viewMode, setViewMode,
     shipConfig, effectiveShipConfigRef
   };
 };

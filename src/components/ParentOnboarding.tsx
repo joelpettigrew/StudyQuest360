@@ -1,65 +1,46 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ScrollText, Zap, Map, Gamepad2, ArrowRight, Sparkles } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { Shield, Users, Settings, Eye, Lock, ArrowRight, Sparkles, CheckCircle2, ExternalLink } from 'lucide-react';
 
-interface StudentOnboardingProps {
-  onComplete: (grade: string) => void;
+interface ParentOnboardingProps {
+  onComplete: () => void;
 }
 
 const steps = [
   {
-    id: 'welcome',
-    title: "Welcome, Adventurer!",
-    desc: "Your journey to mastering your homework starts here. StudyQuest360 turns your assignments into epic quests.",
-    icon: <ScrollText className="text-blue-500" size={48} />,
+    title: "Guardian Command Center",
+    desc: "Welcome to StudyQuest360. As a Guardian, you have full visibility into your student's academic journey.",
+    icon: <Shield className="text-blue-500" size={48} />,
     color: "bg-blue-50"
   },
   {
-    id: 'grade',
-    title: "Choose Your Path",
-    desc: "What grade are you in? This helps the system prepare the right challenges for you.",
-    icon: <Map className="text-emerald-500" size={48} />,
+    title: "Linking Your Student",
+    desc: "To start, you'll need your student's unique ID. Enter it in your dashboard to link accounts and see their progress in real-time.",
+    icon: <Users className="text-emerald-500" size={48} />,
     color: "bg-emerald-50"
   },
   {
-    id: 'quests',
-    title: "Quests & Trials",
-    desc: "Quests are like homework assignments. Trials are like tests. Complete them to earn XP and level up!",
-    icon: <Zap className="text-amber-500" size={48} />,
-    color: "bg-amber-50"
-  },
-  {
-    id: 'keys',
-    title: "Unlock the Game Zone",
-    desc: "Complete Quests and Trials to earn Quest Keys. Use keys to enter the Game Zone and play epic games!",
-    icon: <Gamepad2 className="text-purple-500" size={48} />,
+    title: "Visibility & Insights",
+    desc: "Track completed quests, trial scores, and study streaks. See exactly what topics they are mastering and where they might need a boost.",
+    icon: <Eye className="text-purple-500" size={48} />,
     color: "bg-purple-50"
   },
   {
-    id: 'bank',
-    title: "The Answer Bank",
-    desc: "Enter information on your topics, and the system will help you learn. The Answer Bank stores everything you've mastered.",
-    icon: <Sparkles className="text-blue-500" size={48} />,
-    color: "bg-blue-50"
+    title: "Safety & Controls",
+    desc: "Set 'School Hour' lockouts to restrict gaming during study time, and block specific topics you don't want the AI to generate content for.",
+    icon: <Lock className="text-amber-500" size={48} />,
+    color: "bg-amber-50"
   }
 ];
 
-const grades = [
-  "1st Grade", "2nd Grade", "3rd Grade", "4th Grade", "5th Grade",
-  "6th Grade", "7th Grade", "8th Grade", "9th Grade", "10th Grade",
-  "11th Grade", "12th Grade", "College"
-];
-
-export default function StudentOnboarding({ onComplete }: StudentOnboardingProps) {
+export default function ParentOnboarding({ onComplete }: ParentOnboardingProps) {
   const [currentStep, setCurrentStep] = React.useState(0);
-  const [selectedGrade, setSelectedGrade] = React.useState("9th Grade");
 
   const next = () => {
     if (currentStep < steps.length - 1) {
       setCurrentStep(prev => prev + 1);
     } else {
-      onComplete(selectedGrade);
+      onComplete();
     }
   };
 
@@ -95,25 +76,6 @@ export default function StudentOnboarding({ onComplete }: StudentOnboardingProps
                   {steps[currentStep].desc}
                 </p>
               </div>
-
-              {steps[currentStep].id === 'grade' && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto p-4 bg-slate-50 rounded-3xl custom-scrollbar">
-                  {grades.map(grade => (
-                    <button
-                      key={grade}
-                      onClick={() => setSelectedGrade(grade)}
-                      className={cn(
-                        "px-4 py-3 rounded-xl font-bold text-sm transition-all",
-                        selectedGrade === grade 
-                          ? "bg-blue-600 text-white shadow-lg shadow-blue-200" 
-                          : "bg-white text-slate-600 border border-slate-200 hover:border-blue-300"
-                      )}
-                    >
-                      {grade}
-                    </button>
-                  ))}
-                </div>
-              )}
             </motion.div>
           </AnimatePresence>
 
@@ -133,8 +95,8 @@ export default function StudentOnboarding({ onComplete }: StudentOnboardingProps
             >
               {currentStep === steps.length - 1 ? (
                 <>
-                  Begin Adventure
-                  <Sparkles className="w-6 h-6 animate-pulse" />
+                  Enter Dashboard
+                  <CheckCircle2 className="w-6 h-6" />
                 </>
               ) : (
                 <>
@@ -143,6 +105,24 @@ export default function StudentOnboarding({ onComplete }: StudentOnboardingProps
                 </>
               )}
             </button>
+
+            {currentStep === steps.length - 1 && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="pt-4"
+              >
+                <a 
+                  href="https://support.google.com/families/answer/7103338?hl=en#:~:text=You%20can%20create%20a%20Google,controls%20to%20help%20supervise%20them." 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-700 font-bold text-sm flex items-center gap-2 underline underline-offset-4"
+                >
+                  <ExternalLink size={16} />
+                  Learn about creating Google Family accounts
+                </a>
+              </motion.div>
+            )}
           </div>
         </div>
       </motion.div>

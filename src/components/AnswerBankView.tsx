@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, query, where, onSnapshot, doc, updateDoc, orderBy } from 'firebase/firestore';
 import { AnswerBank, Assignment } from '../types';
 import { replaceConceptAndQuestions, generateAnswerBank } from '../services/answerBankService';
-import { Loader2, X, RefreshCw, BookOpen, BrainCircuit, Plus, Trash2 } from 'lucide-react';
+import { Loader2, X, RefreshCw, BookOpen, BrainCircuit, Plus, Trash2, Download } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface AnswerBankViewProps {
@@ -117,6 +117,36 @@ export default function AnswerBankView({ studentId, assignments, grade }: Answer
     }
   };
 
+  const exportBank = (bank: AnswerBank) => {
+    const assignment = assignments.find(a => a.id === bank.assignmentId);
+    const title = assignment?.title || bank.topic || bank.subject || 'StudyQuest_AnswerBank';
+    
+    let content = `STUDYQUEST360 ANSWER BANK: ${title.toUpperCase()}\n`;
+    content += `Generated on: ${new Date(bank.createdAt).toLocaleDateString()}\n`;
+    content += `====================================================\n\n`;
+    
+    content += `CONCEPTS:\n`;
+    bank.concepts.forEach((c, i) => {
+      content += `${i + 1}. ${c.term}: ${c.definition}\n`;
+    });
+    
+    content += `\nQUESTIONS & ANSWERS:\n`;
+    bank.questions.forEach((q, i) => {
+      content += `Q${i + 1}: ${q.question}\n`;
+      content += `A: ${q.correctAnswer}\n\n`;
+    });
+    
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${title.replace(/\s+/g, '_')}_AnswerBank.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-6 md:p-12 max-w-6xl mx-auto font-serif">
       <header className="flex items-center justify-between mb-12 bg-[#fdf6e3] p-8 rounded-[2.5rem] border-4 border-[#e6d5b8] shadow-lg">
@@ -209,9 +239,18 @@ export default function AnswerBankView({ studentId, assignments, grade }: Answer
         <div className="lg:col-span-3 space-y-8">
           {selectedBank ? (
             <div className="bg-white p-8 rounded-[2.5rem] border-4 border-[#e6d5b8] shadow-lg">
-              <h3 className="text-2xl font-black text-[#4a3f35] mb-6 uppercase tracking-widest border-b-2 border-[#fdf6e3] pb-4">
-                Concepts for: {relatedAssignment?.title || selectedBank.topic || selectedBank.subject}
-              </h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b-2 border-[#fdf6e3] pb-4">
+                <h3 className="text-2xl font-black text-[#4a3f35] uppercase tracking-widest">
+                  Concepts for: {relatedAssignment?.title || selectedBank.topic || selectedBank.subject}
+                </h3>
+                <button
+                  onClick={() => exportBank(selectedBank)}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl font-bold font-sans hover:bg-emerald-600 transition-all shadow-md"
+                >
+                  <Download size={18} />
+                  Export Bank
+                </button>
+              </div>
               
               <div className="space-y-6">
                 {selectedBank.concepts.map((concept, idx) => (

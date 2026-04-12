@@ -20,6 +20,7 @@ export interface UserProfile {
   highScores?: Record<string, number>;
   assignmentsAddedCount?: number;
   onboarded?: boolean;
+  avatar?: string;
 }
 
 export interface Connection {
@@ -91,6 +92,7 @@ export interface AnswerBank {
   concepts: {
     term: string;
     definition: string;
+    description?: string;
     status: 'kept' | 'rejected';
   }[];
   relationships: {

@@ -35,6 +35,7 @@ export const AppContent: React.FC = () => {
         lives,
         currentQuestion,
         answerQuestion,
+        sessionQuestions,
     } = useAppContext();
 
     const handleShaderError = useCallback((err: string) => {
@@ -169,15 +170,30 @@ export const AppContent: React.FC = () => {
 
             {gameState === 'gameover' && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
-                    <div className="text-center p-8 bg-[#f4e4bc] border-4 border-[#8d6e63] rounded-2xl shadow-2xl max-w-md w-full mx-4 transform transition-all animate-in fade-in zoom-in duration-300 text-[#5d4037]">
+                    <div className="text-center p-8 bg-[#f4e4bc] border-4 border-[#8d6e63] rounded-[3rem] shadow-2xl max-w-lg w-full mx-4 transform transition-all animate-in fade-in zoom-in duration-300 text-[#5d4037] flex flex-col max-h-[85vh]">
                         <h2 className="text-5xl font-black mb-4 tracking-tighter uppercase italic">MISSION FAILED</h2>
                         <p className="mb-2 text-lg">Your journey has come to an end.</p>
-                        <p className="mb-8 font-bold text-2xl">Final Score: {score}</p>
+                        <p className="mb-6 font-bold text-2xl">Final Score: {score}</p>
+                        
+                        {sessionQuestions && sessionQuestions.length > 0 && (
+                            <div className="flex-1 overflow-y-auto mb-6 pr-2 text-left space-y-4 bg-black/5 p-4 rounded-2xl border border-[#8d6e63]/20">
+                                <h3 className="text-[#8d6e63] font-black uppercase tracking-widest text-[10px] mb-2">Arcane Knowledge Gained:</h3>
+                                {sessionQuestions.map((q, i) => (
+                                    <div key={i} className="border-l-2 border-[#8d6e63]/50 pl-3 py-1">
+                                        <p className="text-[#5d4037] text-sm font-medium mb-1">{q.question}</p>
+                                        <p className={`text-xs font-bold ${q.correct ? 'text-emerald-600' : 'text-[#8d6e63]/60'}`}>
+                                            {q.correct ? '✓ Correct' : '✗ Missed'} — Answer: {q.answer}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
                         <button
                             onClick={restartGame}
-                            className="w-full py-4 bg-[#8d6e63] hover:bg-[#5d4037] text-[#f4e4bc] font-bold rounded-xl transition-all transform hover:scale-105 active:scale-95 shadow-lg uppercase tracking-widest"
+                            className="w-full py-5 bg-[#8d6e63] hover:bg-[#5d4037] text-[#f4e4bc] font-black text-xl rounded-2xl transition-all transform hover:scale-105 active:scale-95 shadow-2xl uppercase tracking-widest border-b-8 border-[#5d4037] mt-auto"
                         >
-                            Try Again
+                            Play Again (1 Key)
                         </button>
                     </div>
                 </div>
