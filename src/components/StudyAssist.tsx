@@ -21,6 +21,8 @@ interface StudyData {
   analogy: string;
   keyTopics: string[];
   interestingFacts: string[];
+  wikipediaTitle: string;
+  answerBankSuggestions: { term: string; definition: string }[];
 }
 
 export default function StudyAssist({ topic, subject, blockedTopics, interests = [], grade, studentId, history = [] }: StudyAssistProps) {
@@ -71,6 +73,25 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
 
   const generateInfographic = async () => {
     if (!data || !studentId) return;
+
+    // Check if user has already created a scroll today
+    try {
+      const userDoc = await getDocs(query(collection(db, 'users'), where('uid', '==', studentId)));
+      if (!userDoc.empty) {
+        const userData = userDoc.docs[0].data();
+        if (userData.lastScrollCreatedAt) {
+          const lastCreated = new Date(userData.lastScrollCreatedAt);
+          const now = new Date();
+          if (lastCreated.toDateString() === now.toDateString() && studentId !== '2n7YSAK6VQetGGUIsROHB8RjmUh2') { // Allow admin bypass
+            setError("You've already created a scroll today! The digital ink needs time to dry. Come back tomorrow for a new one.");
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("StudyAssist: Scroll limit check failed:", err);
+    }
+
     setGeneratingScroll(true);
     setError(null);
     try {
@@ -184,28 +205,39 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
 
       const ai = new GoogleGenAI({ apiKey });
 
-      const gradeContext = grade ? `for a ${grade} student` : 'for a 9th grade student';
+      const gradeContext = grade ? `for a ${grade} student` : 'for an 8th grade student';
       const interestContext = interests && interests.length > 0 
         ? `The student is interested in ${interests.join(', ')}. Use these interests to frame the explanation and create a fun analogy.`
-        : '';
+        : 'The student has no specific interests provided; use "general real-world innovation" as the narrative setting/context.';
 
-      const prompt = `You are the AI engine for StudyQuest360 (Project: studyquest360-979db).
-      You are an expert educational tutor. Your goal is to teach a student (${gradeContext}) about "${topic}" (Subject: ${subject}).
-
+      const prompt = `You are the AI engine for StudyQuest360. You are an expert educational tutor.
+      Your goal is to teach a student (${gradeContext}) about "${topic}" (Subject: ${subject}).
       ${interestContext}
 
-      Please provide:
-      1. explanation: A clear, engaging explanation of the topic, written at the appropriate grade level. If interests are provided, use them to make the explanation more relatable.
-      2. analogy: A creative analogy that explains the concept. If interests are provided, the analogy MUST be based on one of those interests.
-      3. keyTopics: An array of 5 key factual points or vocabulary words related to the subject. These should be strictly educational and NOT framed by the student's interests.
-      4. interestingFacts: An array of 2-3 surprising or cool facts about the subject.
+      ### Operational Rules:
+      1. **Fact First:** High fidelity on the ${subject} and ${topic} is mandatory. Do not sacrifice technical accuracy for the sake of the interests.
+      2. **Grade-Appropriate Complexity:** Strictly adjust vocabulary and conceptual depth for ${gradeContext}.
+      3. **The "Why" Requirement:** The 'explanation' field must begin with a single, impactful sentence explaining why this topic matters in the real world.
 
-      Return ONLY a JSON object with keys: explanation, analogy, keyTopics, interestingFacts.`;
+      ### Response Format:
+      Return ONLY a JSON object with the following keys:
+
+      - "explanation": (String) Start with a "Why it matters" sentence. Then, provide a clear lesson on the topic. Use the student's interests as the narrative setting/context, but ensure the core academic principles are the focus.
+      - "analogy": (String) A creative analogy for the topic. If interests are provided, this MUST be framed by those interests.
+      - "keyTopics": (Array of 5 Strings) The most important factual terms or pillars of the topic. These must be strictly academic and NOT themed by interests.
+      - "interestingFacts": (Array of 2-3 Strings) Surprising, high-fidelity facts about the topic.
+      - "wikipediaTitle": (String) The exact title of the most relevant, high-level Wikipedia article for "${topic}". Avoid deep-links, section anchors, or obscure sub-topics.
+      - "answerBankSuggestions": (Array of 3 Objects) Each object must have "term" and "definition". These should be concise pairs suitable for a matching game based on "${topic}".
+
+      ### Constraints:
+      - No conversational filler. 
+      - No mentions of being an AI.
+      - Ensure the JSON is valid and parsable.`;
 
       console.log("StudyAssist: Fetching help for topic:", topic);
       
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -297,15 +329,17 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
     content += `THE LESSON:\n${data.explanation}\n\n`;
     content += `FUN ANALOGY:\n${data.analogy}\n\n`;
     
-    content += `KEY CONCEPTS:\n`;
-    data.keyTopics.forEach((t, i) => {
-      content += `- ${t}\n`;
+    content += `GAME PREP (Suggested Terms):\n`;
+    data.answerBankSuggestions.forEach((s, i) => {
+      content += `- ${s.term}: ${s.definition}\n`;
     });
     
     content += `\nDID YOU KNOW?:\n`;
     data.interestingFacts.forEach((f, i) => {
       content += `- ${f}\n`;
     });
+
+    content += `\nFURTHER READING:\nhttps://en.wikipedia.org/wiki/${data.wikipediaTitle.replace(/\s+/g, '_')}\n`;
     
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -324,13 +358,13 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
       
       <div className="flex items-center justify-end mb-4 md:mb-8 relative z-10">
         <div className="flex items-center gap-3">
-          {topic && (
+          {topic && !data && (
             <button 
               onClick={fetchStudyHelp}
               disabled={loading}
               className="px-4 md:px-8 py-2 md:py-3 bg-[#8b5cf6] text-white rounded-xl md:rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest hover:bg-[#7c3aed] transition-all shadow-lg border-2 border-[#7c3aed] flex items-center gap-2 disabled:opacity-50"
             >
-              {loading ? <Loader2 className="w-4 h-4 md:w-5 md:h-5 animate-spin" /> : data ? 'Refresh Wisdom' : 'Consult Oracle'}
+              {loading ? <Loader2 className="w-4 h-4 md:w-5 md:h-5 animate-spin" /> : 'Consult Oracle'}
             </button>
           )}
         </div>
@@ -343,32 +377,34 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
-            className="flex-1 flex flex-col items-center justify-center space-y-4 md:space-y-6 relative z-10"
+            className="flex-1 overflow-y-auto custom-scrollbar relative z-10"
           >
-            <div className="relative group">
-              <img 
-                src={createdScrollUrl} 
-                alt="Educational Scroll" 
-                className="max-h-[50vh] md:max-h-[60vh] rounded-2xl shadow-2xl border-4 border-[#e6d5b8] transform rotate-1 group-hover:rotate-0 transition-transform duration-500"
-                referrerPolicy="no-referrer"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl pointer-events-none" />
-            </div>
-            <div className="flex flex-col sm:flex-row items-center gap-3 md:gap-4 w-full sm:w-auto">
-              <button 
-                onClick={() => setViewScroll(false)}
-                className="w-full sm:w-auto px-6 md:px-8 py-2 md:py-3 bg-white border-2 border-[#e6d5b8] text-[#8c7b68] rounded-xl md:rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest hover:bg-[#fdf6e3] transition-all shadow-md"
-              >
-                Back to Oracle
-              </button>
-              <a 
-                href={createdScrollUrl} 
-                download={`${topic}_scroll.png`}
-                className="w-full sm:w-auto px-6 md:px-8 py-2 md:py-3 bg-[#8b5cf6] text-white rounded-xl md:rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest hover:bg-[#7c3aed] transition-all shadow-md flex items-center justify-center gap-2"
-              >
-                <Download className="w-4 h-4 md:w-[18px] md:h-[18px]" />
-                Download
-              </a>
+            <div className="flex flex-col items-center justify-center space-y-4 md:space-y-6 py-4">
+              <div className="relative group">
+                <img 
+                  src={createdScrollUrl} 
+                  alt="Educational Scroll" 
+                  className="max-h-[50vh] md:max-h-[60vh] rounded-2xl shadow-2xl border-4 border-[#e6d5b8] transform rotate-1 group-hover:rotate-0 transition-transform duration-500"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl pointer-events-none" />
+              </div>
+              <div className="flex flex-col sm:flex-row items-center gap-3 md:gap-4 w-full sm:w-auto">
+                <button 
+                  onClick={() => setViewScroll(false)}
+                  className="w-full sm:w-auto px-6 md:px-8 py-2 md:py-3 bg-white border-2 border-[#e6d5b8] text-[#8c7b68] rounded-xl md:rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest hover:bg-[#fdf6e3] transition-all shadow-md"
+                >
+                  Back to Oracle
+                </button>
+                <a 
+                  href={createdScrollUrl} 
+                  download={`${topic}_scroll.png`}
+                  className="w-full sm:w-auto px-6 md:px-8 py-2 md:py-3 bg-[#8b5cf6] text-white rounded-xl md:rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest hover:bg-[#7c3aed] transition-all shadow-md flex items-center justify-center gap-2"
+                >
+                  <Download className="w-4 h-4 md:w-[18px] md:h-[18px]" />
+                  Download
+                </a>
+              </div>
             </div>
           </motion.div>
         ) : !topic && !data ? (
@@ -436,7 +472,17 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
                     </button>
                   </div>
                 </div>
-                <p className="text-[#4a3f35] font-medium leading-relaxed text-base md:text-lg">{data.explanation}</p>
+                {(() => {
+                  const sentences = data.explanation.split(/(?<=[.!?])\s+/);
+                  const whyItMatters = sentences[0];
+                  const theRest = sentences.slice(1).join(' ');
+                  return (
+                    <div className="space-y-4">
+                      <p className="text-[#4a3f35] font-black text-base md:text-lg leading-relaxed">{whyItMatters}</p>
+                      <p className="text-[#4a3f35] font-medium leading-relaxed text-base md:text-lg">{theRest}</p>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="p-6 md:p-8 bg-[#fdf6e3] rounded-[1.5rem] md:rounded-[2rem] border-4 border-[#e6d5b8] space-y-3 md:space-y-4 shadow-inner relative">
@@ -449,15 +495,15 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div className="bg-white p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border-2 border-[#e6d5b8]">
-                  <h4 className="text-[10px] md:text-xs font-black text-[#8c7b68] uppercase tracking-widest mb-3 md:mb-4">Key Concepts</h4>
-                  <ul className="space-y-2 md:space-y-3">
-                    {data.keyTopics?.map((topic, i) => (
-                      <li key={i} className="flex items-center gap-2 md:gap-3 text-xs md:text-sm font-bold text-[#4a3f35]">
-                        <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-[#8b5cf6]" />
-                        {topic}
-                      </li>
+                  <h4 className="text-[10px] md:text-xs font-black text-[#8c7b68] uppercase tracking-widest mb-3 md:mb-4">Game Prep: Terms</h4>
+                  <div className="space-y-3">
+                    {data.answerBankSuggestions?.map((item, i) => (
+                      <div key={i} className="flex flex-col gap-1 p-2 bg-[#fdf6e3]/50 rounded-xl border border-[#e6d5b8]/50">
+                        <span className="text-[10px] md:text-xs font-black text-[#8b5cf6] uppercase tracking-tight">{item.term}</span>
+                        <span className="text-[9px] md:text-[11px] text-[#4a3f35] font-medium leading-tight">{item.definition}</span>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 </div>
                 <div className="bg-white p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border-2 border-[#e6d5b8]">
                   <h4 className="text-[10px] md:text-xs font-black text-[#8c7b68] uppercase tracking-widest mb-3 md:mb-4">Did You Know?</h4>
@@ -471,6 +517,26 @@ export default function StudyAssist({ topic, subject, blockedTopics, interests =
                   </ul>
                 </div>
               </div>
+
+              {data.wikipediaTitle && (
+                <div className="bg-white p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border-2 border-[#e6d5b8] flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div>
+                    <h4 className="text-[10px] md:text-xs font-black text-[#8c7b68] uppercase tracking-widest mb-1">Deep Dive</h4>
+                    <p className="text-xs text-[#4a3f35] font-bold">Learn more about {topic} on Wikipedia</p>
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <a 
+                      href={`https://en.wikipedia.org/wiki/${data.wikipediaTitle.replace(/\s+/g, '_')}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg"
+                    >
+                      Open Wikipedia
+                      <ExternalLink size={14} />
+                    </a>
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         ) : null}

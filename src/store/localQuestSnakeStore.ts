@@ -160,11 +160,21 @@ export const useLocalGameStore = create<LocalGameStore>((set, get) => ({
         });
       }
 
+      const player = state.gameState.players[state.playerId];
+      const newPlayers = { ...state.gameState.players };
+      if (player && correct) {
+        newPlayers[state.playerId] = {
+          ...player,
+          score: player.score + 90 // 20 gems (40 points) + 50 bonus points
+        };
+      }
+
       return {
         isPaused: false,
         sessionQuestions: newSessionQuestions,
         gameState: {
           ...state.gameState,
+          players: newPlayers,
           activeQuestion: null,
           isPaused: false,
         },

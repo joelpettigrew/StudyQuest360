@@ -46,7 +46,7 @@ export const useStore = create<GameState>((set, get) => ({
   lives: 3,
   level: 1,
   speed: 22.5,
-  isMuted: false,
+  isMuted: true,
   isBoosting: false,
   laneCount: 3,
   distance: 0,
@@ -57,7 +57,7 @@ export const useStore = create<GameState>((set, get) => ({
   targetWord: [],
   missingIndices: [],
   sessionQuestions: [],
-
+  
   setStatus: (status) => set({ status }),
   
   startGame: (answerBanks) => {
@@ -90,16 +90,18 @@ export const useStore = create<GameState>((set, get) => ({
     const fullWord = firstQ.answer.split('');
     
     // Logic for missing letters:
-    // If more than 5 letters, 5 are missing.
-    // Otherwise, all are missing (or maybe just some? User said "If it has more than 5 letters I want all of the term to be spelled but missing 5 letters").
-    // Let's assume if <= 5 letters, all are missing.
+    // Exclude spaces from being "missing"
+    const letterIndices = fullWord
+      .map((char, i) => (/[A-Z0-9]/.test(char) ? i : -1))
+      .filter(i => i !== -1);
+
     let missing: number[] = [];
-    if (fullWord.length > 5) {
-      // Pick 5 random indices to be missing
-      const indices = Array.from({ length: fullWord.length }, (_, i) => i);
-      missing = indices.sort(() => Math.random() - 0.5).slice(0, 5);
+    if (letterIndices.length > 5) {
+      // Pick exactly 5 random indices to be missing
+      missing = letterIndices.sort(() => Math.random() - 0.5).slice(0, 5);
     } else {
-      missing = Array.from({ length: fullWord.length }, (_, i) => i);
+      // All letters are missing if 5 or fewer
+      missing = letterIndices;
     }
 
     // Initial collected letters are those NOT in missing
@@ -173,12 +175,15 @@ export const useStore = create<GameState>((set, get) => ({
     const nextQ = questions[nextIndex];
     const fullWord = nextQ.answer.split('');
     
+    const letterIndices = fullWord
+      .map((char, i) => (/[A-Z0-9]/.test(char) ? i : -1))
+      .filter(i => i !== -1);
+
     let missing: number[] = [];
-    if (fullWord.length > 5) {
-      const indices = Array.from({ length: fullWord.length }, (_, i) => i);
-      missing = indices.sort(() => Math.random() - 0.5).slice(0, 5);
+    if (letterIndices.length > 5) {
+      missing = letterIndices.sort(() => Math.random() - 0.5).slice(0, 5);
     } else {
-      missing = Array.from({ length: fullWord.length }, (_, i) => i);
+      missing = letterIndices;
     }
 
     const initialCollected = Array.from({ length: fullWord.length }, (_, i) => i)

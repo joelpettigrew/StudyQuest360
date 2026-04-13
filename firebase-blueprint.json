@@ -95,13 +95,24 @@
       "properties": {
         "studentId": { "type": "string" },
         "topic": { "type": "string" },
-        "summary": { "type": "string" },
-        "keyConcepts": { "type": "array", "items": { "type": "string" } },
+        "explanation": { "type": "string" },
+        "analogy": { "type": "string" },
+        "keyTopics": { "type": "array", "items": { "type": "string" } },
         "interestingFacts": { "type": "array", "items": { "type": "string" } },
-        "resources": { "type": "array", "items": { "type": "object" } },
+        "wikipediaTitle": { "type": "string" },
+        "answerBankSuggestions": { 
+          "type": "array", 
+          "items": { 
+            "type": "object",
+            "properties": {
+              "term": { "type": "string" },
+              "definition": { "type": "string" }
+            }
+          } 
+        },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["studentId", "topic", "summary"]
+      "required": ["studentId", "topic", "explanation"]
     },
     "Trial": {
       "title": "Trial",

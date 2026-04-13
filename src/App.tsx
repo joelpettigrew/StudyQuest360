@@ -1900,14 +1900,21 @@ function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onSc
         return false;
       }
     });
-    return {
+
+    const total = daySessions.length;
+    const data: any = {
       date: format(day, 'MMM d'),
-      'Concept Match': daySessions.filter(s => s.gameId === 'concept-match').length,
-      'Gravity Drop': daySessions.filter(s => s.gameId === 'gravity-match').length,
-      'Quest Run': daySessions.filter(s => s.gameId === 'questrun').length,
-      'Target Practice': daySessions.filter(s => s.gameId === 'target-practice').length,
-      'Space Portal': daySessions.filter(s => s.gameId === 'space-portal').length
+      total: total
     };
+
+    games.forEach(game => {
+      const count = daySessions.filter(s => s.gameId === game.id).length;
+      // Normalize to 100% if total > 0
+      data[game.title] = total > 0 ? (count / total) * 100 : 0;
+      data[`${game.title}_count`] = count;
+    });
+
+    return data;
   });
 
   const isUnlimited = user.email === 'pettigrewjoel@gmail.com';
@@ -2057,14 +2064,18 @@ function GameZone({ user, assignments, answerBanks, isLockedOut, onTryUsed, onSc
                   <BarChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e6d5b8" />
                     <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#8c7b68', fontFamily: 'sans-serif' }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#8c7b68', fontFamily: 'sans-serif' }} />
+                    <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#8c7b68', fontFamily: 'sans-serif' }} tickFormatter={(val) => `${val}%`} />
                     <Tooltip 
+                      formatter={(value: number, name: string, props: any) => {
+                        const count = props.payload[`${name}_count`];
+                        return [`${count} plays (${value.toFixed(1)}%)`, name];
+                      }}
                       contentStyle={{ borderRadius: '1.5rem', border: '4px solid #e6d5b8', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', backgroundColor: '#fdf6e3', fontFamily: 'sans-serif' }}
                       cursor={{ fill: '#fdf6e3', opacity: 0.5 }}
                     />
                     <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontWeight: 700, fontFamily: 'sans-serif', color: '#4a3f35' }} />
                     {games.map(game => (
-                      <Bar key={game.id} dataKey={game.title} stackId="a" fill={game.color.match(/#([a-f0-9]{6})/i)?.[0] || '#8b5cf6'} radius={[4, 4, 0, 0]} />
+                      <Bar key={game.id} dataKey={game.title} stackId="a" fill={game.color.match(/#([a-f0-9]{6})/i)?.[0] || '#8b5cf6'} />
                     ))}
                   </BarChart>
                 </ResponsiveContainer>

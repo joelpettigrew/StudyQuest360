@@ -48,6 +48,19 @@
 //   - imageUrl: string
 //   - createdAt: timestamp
 //
+// Collection: study_history
+// Document ID: historyId
+// Fields:
+//   - studentId: string (required)
+//   - topic: string (required)
+//   - explanation: string (required)
+//   - analogy: string
+//   - keyTopics: list of strings
+//   - interestingFacts: list of strings
+//   - wikipediaTitle: string
+//   - answerBankSuggestions: list of objects
+//   - createdAt: timestamp
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -165,10 +178,15 @@ service cloud.firestore {
     }
 
     function isValidStudyHistory(data) {
-      return data.keys().hasAll(['studentId', 'topic', 'summary', 'createdAt']) &&
+      return data.keys().hasAll(['studentId', 'topic', 'explanation', 'createdAt']) &&
              data.studentId is string &&
              data.topic is string &&
-             data.summary is string &&
+             data.explanation is string &&
+             (!('analogy' in data) || data.analogy is string) &&
+             (!('keyTopics' in data) || data.keyTopics is list) &&
+             (!('interestingFacts' in data) || data.interestingFacts is list) &&
+             (!('wikipediaTitle' in data) || data.wikipediaTitle is string) &&
+             (!('answerBankSuggestions' in data) || data.answerBankSuggestions is list) &&
              data.createdAt is timestamp;
     }
 

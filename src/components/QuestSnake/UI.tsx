@@ -126,7 +126,7 @@ export function UI({ onPlayAgain }: { onPlayAgain: () => void }) {
               </div>
               
               <div className="mt-8 text-center text-amber-500/40 text-[10px] uppercase tracking-widest">
-                Correct answer grants +20 Power
+                Correct answer grants +90 Power
               </div>
             </motion.div>
           </motion.div>

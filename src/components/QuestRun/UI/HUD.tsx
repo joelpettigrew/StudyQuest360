@@ -62,21 +62,16 @@ export const HUD: React.FC<HUDProps> = ({ onStart, tries, isLockedOut, parentSet
         </div>
 
         <div className="flex gap-2">
-          <button 
-            onClick={() => setMuted(!isMuted)}
-            className="p-2.5 bg-black/60 backdrop-blur-md rounded-xl border border-white/10 text-white hover:bg-white/10 transition-colors"
-          >
-            {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-          </button>
+          {/* Mute button removed as per request */}
         </div>
       </div>
 
       {/* Riddle Overlay (Top) */}
       {status === GameStatus.PLAYING && (
-        <div className="mt-2 flex justify-center w-full pointer-events-auto px-4">
-          <div className="bg-black/80 backdrop-blur-md border-2 border-white/10 p-3 rounded-xl text-center shadow-[0_10px_30px_rgba(0,0,0,0.5)] w-full max-w-xl">
-            <p className="text-white/70 text-[9px] uppercase tracking-widest font-black mb-0.5">Current Riddle</p>
-            <h3 className="text-white text-sm font-bold leading-tight">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full pointer-events-auto px-4 pt-2 z-50">
+          <div className="bg-black/80 backdrop-blur-md border-2 border-white/10 p-2 rounded-xl text-center shadow-[0_10px_30px_rgba(0,0,0,0.5)] w-full max-w-xl mx-auto">
+            <p className="text-white/70 text-[8px] uppercase tracking-widest font-black mb-0.5">Current Riddle</p>
+            <h3 className="text-white text-xs md:text-sm font-bold leading-tight">
               {questions[currentQuestionIndex]?.text}
             </h3>
           </div>
@@ -222,22 +217,27 @@ export const HUD: React.FC<HUDProps> = ({ onStart, tries, isLockedOut, parentSet
           {/* Dashboard Background */}
           <div className="w-full bg-slate-950/90 backdrop-blur-xl border-t-4 border-slate-800 p-4 flex flex-col items-center gap-3 min-h-[15%] shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
             {/* Word Progress */}
-            <div className="flex flex-wrap justify-center gap-2">
+            <div className="flex flex-wrap justify-center gap-2 max-w-4xl">
               {targetWord.map((letter, i) => {
                 const isCollected = collectedLetters.includes(i);
                 const isMissing = missingIndices.includes(i);
                 const color = QUEST_COLORS[i % QUEST_COLORS.length];
+                const isSpace = letter === ' ';
                 
+                if (isSpace) {
+                  return <div key={i} className="w-6 md:w-8" />;
+                }
+
                 return (
                   <motion.div
                     key={i}
                     initial={isMissing ? { scale: 0.8, opacity: 0.5 } : { scale: 1, opacity: 1 }}
-                    animate={isCollected ? { scale: 1.1, opacity: 1 } : { scale: 1, opacity: isMissing ? 0.3 : 1 }}
+                    animate={isCollected ? { scale: 1.1, opacity: 1 } : { scale: 1, opacity: isMissing ? 0.5 : 1 }}
                     className={`
-                      w-9 h-11 rounded-xl flex items-center justify-center text-xl font-black border-2
+                      w-9 h-11 rounded-xl flex items-center justify-center text-xl font-black border-2 transition-colors
                       ${isCollected 
-                        ? 'bg-white text-slate-900 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' 
-                        : 'bg-black/40 text-white/20 border-white/10'}
+                        ? 'bg-white border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' 
+                        : 'bg-black/60 text-amber-500/80 border-amber-500/30'}
                     `}
                     style={isCollected ? { color: color } : {}}
                   >

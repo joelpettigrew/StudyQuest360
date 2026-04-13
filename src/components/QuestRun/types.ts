@@ -50,6 +50,6 @@ export const QUEST_COLORS = [
     '#0F52BA', // Sapphire
     '#9966CC', // Amethyst
     '#00CED1', // Dark Turquoise
-    '#FFFFFF', // White
+    '#FF69B4', // Hot Pink
     '#87CEEB', // Sky Blue
 ];
